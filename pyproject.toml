@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "A terminal-based Xiangqi (Chinese Chess) game powered by the Pikafish engine"
 readme = "README.md"
 requires-python = ">=3.8"
-license = "MIT"
+license = {file = "LICENSE"}
 authors = [
     {name = "Pikafish Terminal Contributors"},
 ]
