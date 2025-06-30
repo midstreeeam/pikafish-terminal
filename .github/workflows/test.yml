@@ -31,7 +31,7 @@ jobs:
         fetch-depth: 0
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -45,8 +45,10 @@ jobs:
         python -m build
 
     - name: Install package
+      shell: bash
       run: |
-        pip install dist/*.whl
+        # Install the built wheel package
+        python -m pip install dist/*.whl
 
     - name: Test CLI commands
       run: |
@@ -63,7 +65,7 @@ jobs:
         fetch-depth: 0
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
 
@@ -81,7 +83,7 @@ jobs:
         python -m twine check dist/*
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: dist
         path: dist/ 
