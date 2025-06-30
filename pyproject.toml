@@ -1,0 +1,11 @@
+[project]
+name = "pikafish-terminal"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "colorama>=0.4.6",
+    "py7zr>=1.0.0",
+    "requests>=2.32.4",
+]
