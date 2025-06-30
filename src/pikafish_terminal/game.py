@@ -3,11 +3,11 @@ from __future__ import annotations
 import sys
 from typing import Optional
 
-from board import XiangqiBoard
-from engine import PikafishEngine
-from ui import render
-from difficulty import prompt_difficulty_selection, DifficultyLevel
-from logging_config import get_logger
+from .board import XiangqiBoard
+from .engine import PikafishEngine
+from .ui import render
+from .difficulty import prompt_difficulty_selection, DifficultyLevel
+from .logging_config import get_logger
 
 
 PROMPT = "(pikafish) > "

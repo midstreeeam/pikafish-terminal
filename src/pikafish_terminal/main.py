@@ -1,5 +1,5 @@
-from game import play
-from logging_config import setup_logging
+from .game import play
+from .logging_config import setup_logging
 
 
 def main() -> None:

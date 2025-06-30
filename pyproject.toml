@@ -1,11 +1,77 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "pikafish-terminal"
-version = "0.1.0"
-description = "Add your description here"
+dynamic = ["version"]
+description = "A terminal-based Xiangqi (Chinese Chess) game powered by the Pikafish engine"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.8"
+license = "MIT"
+authors = [
+    {name = "Pikafish Terminal Contributors"},
+]
+keywords = ["xiangqi", "chinese-chess", "chess", "game", "terminal", "pikafish"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment :: Board Games",
+    "Topic :: Games/Entertainment :: Turn Based Strategy",
+]
 dependencies = [
-    "colorama>=0.4.6",
-    "py7zr>=1.0.0",
-    "requests>=2.32.4",
+    "requests>=2.25.0",
+    "colorama>=0.4.0",
+    "urllib3>=1.26.0",
+    "py7zr>=0.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "black>=22.0",
+    "flake8>=4.0",
+    "mypy>=0.900",
+]
+
+[project.urls]
+Homepage = "https://github.com/midstreeeam/pikafish-terminal"
+Repository = "https://github.com/midstreeeam/pikafish-terminal"
+Issues = "https://github.com/midstreeeam/pikafish-terminal/issues"
+
+[project.scripts]
+pikafish = "pikafish_terminal.cli:main"
+xiangqi = "pikafish_terminal.cli:main"
+
+[tool.setuptools_scm]
+write_to = "src/pikafish_terminal/_version.py"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"pikafish_terminal" = ["*.txt", "*.md"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[dependency-groups]
+dev = [
+    "build>=1.2.2.post1",
 ]

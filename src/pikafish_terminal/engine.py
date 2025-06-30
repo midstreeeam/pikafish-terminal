@@ -5,9 +5,9 @@ import os
 import shutil
 import sys
 from typing import List, Optional, Tuple
-from downloader import get_pikafish_path
-from difficulty import DifficultyLevel
-from logging_config import get_logger
+from .downloader import get_pikafish_path
+from .difficulty import DifficultyLevel
+from .logging_config import get_logger
 
 
 class PikafishEngine:

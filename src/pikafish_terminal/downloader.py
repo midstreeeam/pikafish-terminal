@@ -6,7 +6,7 @@ import urllib3
 import subprocess
 import warnings
 from pathlib import Path
-from logging_config import get_logger
+from .logging_config import get_logger
 
 # Disable all SSL warnings for compatibility
 urllib3.disable_warnings()
@@ -23,12 +23,14 @@ SUPPORTED_PLATFORMS = {
 
 def extract_7z_file(archive_path: Path, extract_to: Path) -> None:
     """Extract 7z file using system tools."""
+    logger = get_logger('pikafish.downloader')
+    
     try:
         # Try using 7z command first
         result = subprocess.run([
             "7z", "x", str(archive_path), f"-o{extract_to}", "-y"
         ], capture_output=True, text=True, check=True)
-        print("Extracted using 7z command.")
+        logger.info("Extracted using 7z command.")
         return
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
@@ -38,7 +40,7 @@ def extract_7z_file(archive_path: Path, extract_to: Path) -> None:
         result = subprocess.run([
             "7za", "x", str(archive_path), f"-o{extract_to}", "-y"
         ], capture_output=True, text=True, check=True)
-        print("Extracted using 7za command.")
+        logger.info("Extracted using 7za command.")
         return
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
@@ -48,10 +50,10 @@ def extract_7z_file(archive_path: Path, extract_to: Path) -> None:
         import py7zr
         with py7zr.SevenZipFile(archive_path, mode='r') as archive:
             archive.extractall(path=extract_to)
-        print("Extracted using py7zr library.")
+        logger.info("Extracted using py7zr library.")
         return
     except ImportError:
-        print("py7zr library not available. Installing...")
+        logger.info("py7zr library not available. Installing...")
         try:
             subprocess.run([
                 "pip", "install", "py7zr"
@@ -59,7 +61,7 @@ def extract_7z_file(archive_path: Path, extract_to: Path) -> None:
             import py7zr
             with py7zr.SevenZipFile(archive_path, mode='r') as archive:
                 archive.extractall(path=extract_to)
-            print("Installed py7zr and extracted successfully.")
+            logger.info("Installed py7zr and extracted successfully.")
             return
         except Exception as e:
             pass
@@ -79,15 +81,30 @@ def get_pikafish_path() -> Path:
     if platform_key not in SUPPORTED_PLATFORMS:
         raise RuntimeError(f"Unsupported platform: {system} {machine}")
 
-    # Project root is parent of src/
-    project_root = Path(__file__).resolve().parent.parent
+    # Use user data directory for downloaded engines
     engine_name = "pikafish.exe" if system == "Windows" else "pikafish"
-    engine_path = project_root / engine_name
+    
+    # Try project root first (for development)
+    project_root = Path(__file__).resolve().parent.parent.parent
+    engine_path_dev = project_root / engine_name
+    if engine_path_dev.is_file():
+        return engine_path_dev
+    
+    # Use user data directory for installed package
+    if system == "Windows":
+        data_dir = Path.home() / "AppData" / "Local" / "pikafish-terminal"
+    elif system == "Darwin":  # macOS
+        data_dir = Path.home() / "Library" / "Application Support" / "pikafish-terminal"
+    else:  # Linux and others
+        data_dir = Path.home() / ".local" / "share" / "pikafish-terminal"
+    
+    data_dir.mkdir(parents=True, exist_ok=True)
+    engine_path = data_dir / engine_name
     
     if engine_path.is_file():
         return engine_path
 
-    logger.info(f"Pikafish not found. Downloading latest version...")
+    logger.info(f"Pikafish not found. Downloading latest version to {data_dir}...")
     
     # Create a session with SSL verification disabled to handle SSL issues
     session = requests.Session()
@@ -129,7 +146,7 @@ def get_pikafish_path() -> Path:
         download_url = "https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2025-06-23/Pikafish.2025-06-23.7z"
         filename = "Pikafish.2025-06-23.7z"
 
-    archive_path = project_root / filename
+    archive_path = data_dir / filename
 
     logger.info(f"Downloading from: {download_url}")
     
@@ -140,20 +157,20 @@ def get_pikafish_path() -> Path:
             with open(archive_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
-        print("Download successful with requests.")
+        logger.info("Download successful with requests.")
     except Exception as e:
-        print(f"Python requests failed ({e}), trying curl...")
+        logger.info(f"Python requests failed ({e}), trying curl...")
         result = subprocess.run([
             "curl", "-L", "-o", str(archive_path), download_url
         ], capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f"Failed to download with curl: {result.stderr}")
-        print("Download successful with curl.")
+        logger.info("Download successful with curl.")
 
-    print("Extracting binary...")
+    logger.info("Extracting binary...")
     
     # Create temporary extraction directory
-    extract_dir = project_root / "temp_extract"
+    extract_dir = data_dir / "temp_extract"
     extract_dir.mkdir(exist_ok=True)
     
     try:
@@ -204,33 +221,34 @@ def get_pikafish_path() -> Path:
         os.chmod(engine_path, st.st_mode | stat.S_IEXEC)
     
     # Download neural network file if missing
-    nn_file = project_root / "pikafish.nnue"
+    nn_file = data_dir / "pikafish.nnue"
     if not nn_file.exists():
-        print("Downloading neural network file...")
-        download_neural_network(project_root, session)
+        logger.info("Downloading neural network file...")
+        download_neural_network(data_dir, session)
     
     logger.info("Download and extraction complete.")
     return engine_path
 
 
-def download_neural_network(project_root: Path, session: requests.Session) -> None:
+def download_neural_network(data_dir: Path, session: requests.Session) -> None:
     """Download the required neural network file."""
+    logger = get_logger('pikafish.downloader')
     nn_url = "https://github.com/official-pikafish/Networks/releases/download/master-net/pikafish.nnue"
-    nn_path = project_root / "pikafish.nnue"
+    nn_path = data_dir / "pikafish.nnue"
     
-    print(f"Downloading neural network from: {nn_url}")
+    logger.info(f"Downloading neural network from: {nn_url}")
     try:
         with session.get(nn_url, stream=True) as r:
             r.raise_for_status()
             with open(nn_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
-        print("Neural network download successful.")
+        logger.info("Neural network download successful.")
     except Exception as e:
-        print(f"Failed to download neural network with requests ({e}), trying curl...")
+        logger.info(f"Failed to download neural network with requests ({e}), trying curl...")
         result = subprocess.run([
             "curl", "-L", "-o", str(nn_path), nn_url
         ], capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f"Failed to download neural network with curl: {result.stderr}")
-        print("Neural network download successful with curl.")
+        logger.info("Neural network download successful with curl.")
