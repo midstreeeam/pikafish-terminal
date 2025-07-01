@@ -282,13 +282,10 @@ def download_compatible_binary(data_dir: Path, engine_name: str, session: reques
     raise RuntimeError(
         "Could not find a compatible Pikafish binary for this system.\n"
         f"Tested {num_tested} instruction set variants.\n\n"
-        "This often happens in highly restricted virtualized environments like GitHub Codespaces.\n"
-        "The environment may not support running any x86_64 binaries.\n\n"
         "Solutions:\n"
-        "• Try running on a physical machine\n"
         "• Use a different development environment\n"
+        "• Compile Pikafish from source\n"
         "• Check system compatibility with 'pikafish --info'\n"
-        "• Some cloud environments may block binary execution entirely"
     )
 
 
