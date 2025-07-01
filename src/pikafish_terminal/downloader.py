@@ -2,6 +2,8 @@ import platform
 import requests
 import os
 import stat
+import shutil
+import time
 import urllib3
 import subprocess
 import warnings
@@ -24,97 +26,55 @@ SUPPORTED_PLATFORMS = {
 
 
 def extract_7z_file(archive_path: Path, extract_to: Path) -> None:
-    """Extract 7z file using system tools."""
+    """Extract 7z file using py7zr library."""
     logger = get_logger('pikafish.downloader')
     
     try:
-        # Try using 7z command first
-        result = subprocess.run([
-            "7z", "x", str(archive_path), f"-o{extract_to}", "-y"
-        ], capture_output=True, text=True, check=True)
-        logger.info("Extracted using 7z command.")
-        return
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-    
-    try:
-        # Try using 7za (7zip alternative)
-        result = subprocess.run([
-            "7za", "x", str(archive_path), f"-o{extract_to}", "-y"
-        ], capture_output=True, text=True, check=True)
-        logger.info("Extracted using 7za command.")
-        return
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-    
-    try:
-        # Try using Python's py7zr library
         import py7zr
         with py7zr.SevenZipFile(archive_path, mode='r') as archive:
             archive.extractall(path=extract_to)
-        logger.info("Extracted using py7zr library.")
-        return
+        logger.info("Successfully extracted 7z archive.")
     except ImportError:
-        logger.info("py7zr library not available. Installing...")
-        try:
-            subprocess.run([
-                "pip", "install", "py7zr"
-            ], capture_output=True, text=True, check=True)
-            import py7zr
-            with py7zr.SevenZipFile(archive_path, mode='r') as archive:
-                archive.extractall(path=extract_to)
-            logger.info("Installed py7zr and extracted successfully.")
-            return
-        except Exception as e:
-            pass
+        raise RuntimeError(
+            "py7zr library is required to extract 7z files. "
+            "Install it with: pip install py7zr"
+        )
     except Exception as e:
-        pass
-    
-    raise RuntimeError("Unable to extract 7z file. Please install 7z, 7za, or py7zr.")
+        raise RuntimeError(f"Failed to extract 7z file: {e}")
 
 
 def download_with_progress(session: requests.Session, url: str, output_path: Path, description: str = "Downloading") -> None:
     """Download a file with progress bar."""
     logger = get_logger('pikafish.downloader')
     
-    try:
-        with session.get(url, stream=True) as r:
-            r.raise_for_status()
-            total_size = int(r.headers.get('content-length', 0))
-            
-            if total_size > 0:
-                # Use tqdm progress bar
-                with tqdm(
-                    desc=description,
-                    total=total_size,
-                    unit='B',
-                    unit_scale=True,
-                    unit_divisor=1024,
-                    ascii=True,
-                    bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]'
-                ) as pbar:
-                    with open(output_path, "wb") as f:
-                        for chunk in r.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
-                                pbar.update(len(chunk))
-            else:
-                # Fallback without progress bar
+    with session.get(url, stream=True) as r:
+        r.raise_for_status()
+        total_size = int(r.headers.get('content-length', 0))
+        
+        if total_size > 0:
+            # Use tqdm progress bar
+            with tqdm(
+                desc=description,
+                total=total_size,
+                unit='B',
+                unit_scale=True,
+                unit_divisor=1024,
+                ascii=True,
+                bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]'
+            ) as pbar:
                 with open(output_path, "wb") as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
-                            
-        logger.info(f"Download successful: {output_path.name}")
-        
-    except Exception as e:
-        logger.info(f"Download with requests failed ({e}), trying curl...")
-        result = subprocess.run([
-            "curl", "-L", "-o", str(output_path), url
-        ], capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to download with curl: {result.stderr}")
-        logger.info(f"Download successful with curl: {output_path.name}")
+                            pbar.update(len(chunk))
+        else:
+            # Fallback without progress bar
+            with open(output_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        
+    logger.info(f"Download successful: {output_path.name}")
 
 
 def get_pikafish_path() -> Path:
@@ -278,7 +238,6 @@ def download_compatible_binary(data_dir: Path, engine_name: str, session: reques
             if engine_path.exists():
                 engine_path.unlink()
                 
-            import shutil
             shutil.copy2(binary_path, engine_path)
             
             # Make executable on Unix-like systems
@@ -291,15 +250,13 @@ def download_compatible_binary(data_dir: Path, engine_name: str, session: reques
                 logger.info(f"Found compatible binary: {binary_path.name}")
                 print(f"✅ Compatible engine found: {instruction_set}")
                 
-                # Extract neural network file from archive if it exists and we don't have it
+                # Look for neural network file in extracted directory
                 nn_file = data_dir / "pikafish.nnue"
                 if not nn_file.exists():
-                    # Look for neural network file in extracted directory
                     for root, dirs, files in os.walk(extract_dir):
                         for file in files:
                             if file.lower() == "pikafish.nnue":
                                 nn_source = Path(root) / file
-                                import shutil
                                 shutil.copy2(nn_source, nn_file)
                                 logger.info("Extracted neural network file from archive")
                                 print("📦 Extracted neural network file")
@@ -308,12 +265,6 @@ def download_compatible_binary(data_dir: Path, engine_name: str, session: reques
                             continue
                         break
                     
-                    # If still not found, download it separately (fallback)
-                    if not nn_file.exists():
-                        logger.info("Neural network not found in archive, downloading separately...")
-                        print("📥 Downloading neural network file...")
-                        download_neural_network(data_dir, session)
-                
                 return engine_path
             else:
                 logger.info(f"Binary {binary_path.name} not compatible")
@@ -324,7 +275,6 @@ def download_compatible_binary(data_dir: Path, engine_name: str, session: reques
         if archive_path.exists():
             archive_path.unlink()
         if extract_dir.exists():
-            import shutil
             shutil.rmtree(extract_dir)
     
     # If we get here, none of the binaries worked
@@ -337,7 +287,7 @@ def download_compatible_binary(data_dir: Path, engine_name: str, session: reques
         "Solutions:\n"
         "• Try running on a physical machine\n"
         "• Use a different development environment\n"
-        "• Run 'pikafish --diagnose' for system compatibility info\n"
+        "• Check system compatibility with 'pikafish --info'\n"
         "• Some cloud environments may block binary execution entirely"
     )
 
@@ -369,7 +319,6 @@ def test_binary_compatibility(engine_path: Path) -> bool:
                 logger.info("Binary test failed: Unable to write to stdin")
                 return False
             
-            import time
             start_time = time.time()
             got_response = False
             
@@ -441,17 +390,6 @@ def test_binary_compatibility(engine_path: Path) -> bool:
         return False
 
 
-
-def download_neural_network(data_dir: Path, session: requests.Session) -> None:
-    """Download the required neural network file."""
-    logger = get_logger('pikafish.downloader')
-    nn_url = "https://github.com/official-pikafish/Networks/releases/download/master-net/pikafish.nnue"
-    nn_path = data_dir / "pikafish.nnue"
-    
-    logger.info(f"Downloading neural network from: {nn_url}")
-    download_with_progress(session, nn_url, nn_path, "Neural Network")
-
-
 def get_data_directory() -> Path:
     """Get the platform-specific data directory where Pikafish files are stored."""
     system = platform.system()
@@ -466,8 +404,6 @@ def get_data_directory() -> Path:
 
 def cleanup_data_directory() -> None:
     """Remove all downloaded Pikafish files and the data directory."""
-    import shutil
-    
     logger = get_logger('pikafish.downloader')
     data_dir = get_data_directory()
     

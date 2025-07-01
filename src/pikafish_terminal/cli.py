@@ -8,8 +8,6 @@ and run via `pikafish` or `xiangqi` commands.
 
 import sys
 import argparse
-from typing import Optional
-from pathlib import Path
 
 from .logging_config import setup_logging
 from .game import play
@@ -30,11 +28,12 @@ Examples:
   xiangqi --engine ./pikafish # Use custom engine path
   pikafish --info             # Show info about downloaded files
   pikafish --cleanup          # Remove all downloaded files
+  pikafish --log-level DEBUG  # Enable debug logging
   
 {list_difficulty_levels()}
 
 Environment Variables:
-  PIKAFISH_LOG_LEVEL    Set logging level (DEBUG, INFO, WARNING, ERROR)
+  PIKAFISH_LOG_LEVEL    Set logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
   PIKAFISH_LOG_FILE     Save logs to file
         """
     )
@@ -50,12 +49,6 @@ Environment Variables:
         type=int,
         choices=range(1, 7),
         help="Difficulty level (1=Beginner, 6=Master)"
-    )
-    
-    parser.add_argument(
-        "--version", "-v",
-        action="version",
-        version=f"%(prog)s {get_version()}"
     )
     
     parser.add_argument(
@@ -76,16 +69,14 @@ Environment Variables:
         help="Show information about downloaded files and exit"
     )
     
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set logging level (overrides PIKAFISH_LOG_LEVEL environment variable)"
+    )
+    
     return parser
-
-
-def get_version() -> str:
-    """Get the package version."""
-    try:
-        from ._version import version
-        return version
-    except ImportError:
-        return "unknown"
 
 
 def main() -> None:
@@ -134,7 +125,7 @@ def main() -> None:
         sys.exit(0)
     
     # Initialize logging
-    setup_logging()
+    setup_logging(log_level=args.log_level)
     
     # Determine difficulty
     difficulty = None

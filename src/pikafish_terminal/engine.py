@@ -3,8 +3,9 @@ import threading
 import queue
 import os
 import shutil
-import sys
+import time
 from typing import List, Optional, Tuple
+
 from .downloader import get_pikafish_path
 from .difficulty import DifficultyLevel
 from .logging_config import get_logger
@@ -95,7 +96,6 @@ class PikafishEngine:
 
     def _wait_for(self, token: str, timeout: int = 10) -> None:
         """Wait for a specific token in engine output with timeout."""
-        import time
         start_time = time.time()
         while True:
             try:
@@ -137,7 +137,6 @@ class PikafishEngine:
             # Use perft to get all legal moves from this position
             self._cmd("go perft 1")
             
-            import time
             start_time = time.time()
             legal_moves = set()
             
@@ -192,7 +191,6 @@ class PikafishEngine:
             self._cmd(pos_cmd)
             self._cmd("go depth 2")  # Shallow search to get move info
             
-            import time
             start_time = time.time()
             legal_moves = set()
             
@@ -241,7 +239,6 @@ class PikafishEngine:
         
         self._cmd(go_cmd)
             
-        import time
         timeout = (self.time_limit_ms / 1000 + 5) if self.time_limit_ms else 30
         start_time = time.time()
         

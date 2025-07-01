@@ -7,9 +7,11 @@ from pathlib import Path
 def setup_logging(log_level = None, log_file = None) -> logging.Logger:
     """Set up logging configuration for the pikafish terminal application."""
     
-    # Get log level from environment variable, default to INFO
+    # Get log level: CLI argument takes precedence over environment variable
     if log_level is None:
         log_level = os.getenv('PIKAFISH_LOG_LEVEL', 'INFO').upper()
+    else:
+        log_level = log_level.upper()
     
     # Validate log level
     valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
