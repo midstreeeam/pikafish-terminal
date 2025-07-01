@@ -16,10 +16,15 @@ class PikafishEngine:
     def __init__(self, path: Optional[str] = None, difficulty: Optional[DifficultyLevel] = None, depth: Optional[int] = None):
         self.logger = get_logger('pikafish.engine')
         
+        # Initialize attributes first to avoid AttributeError in __del__ if initialization fails
+        self._proc: Optional[subprocess.Popen] = None
+        self._stdout_queue: "queue.Queue[str]" = queue.Queue()
+        
         if path is None:
             try:
                 path = str(get_pikafish_path())
-            except Exception:
+            except (ImportError, FileNotFoundError, ConnectionError, OSError) as e:
+                # Only catch recoverable errors, let critical errors (like RuntimeError for incompatibility) propagate
                 path = "pikafish"
         
         self.path: str = path
@@ -34,8 +39,6 @@ class PikafishEngine:
             self.time_limit_ms = None
             self.uci_options = {}
             
-        self._proc: Optional[subprocess.Popen] = None
-        self._stdout_queue: "queue.Queue[str]" = queue.Queue()
         self._start()
 
     def _start(self) -> None:

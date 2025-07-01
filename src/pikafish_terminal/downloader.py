@@ -284,63 +284,77 @@ def test_binary_compatibility(engine_path: Path) -> bool:
             cwd=str(engine_path.parent)
         )
         
-        # Send uci command and wait for proper uciok response (same as real engine init)
+        # Send uci command and wait for response
         try:
             if proc.stdin is not None:
                 proc.stdin.write("uci\n")
                 proc.stdin.flush()
             else:
                 proc.kill()
+                logger.info("Binary test failed: Unable to write to stdin")
                 return False
             
             import time
             start_time = time.time()
-            got_uciok = False
+            got_response = False
             
-            while time.time() - start_time < 8:  # 8 second timeout (slightly more than engine init)
-                if proc.poll() is not None:
-                    # Process exited - check return code
-                    if proc.returncode != 0:
-                        logger.debug(f"Binary exited with code: {proc.returncode}")
-                        if proc.returncode == -4:  # SIGILL
-                            logger.debug("Binary failed with SIGILL - incompatible CPU instructions")
+            while time.time() - start_time < 3:  # Shorter timeout for faster detection
+                return_code = proc.poll()
+                if return_code is not None:
+                    # Process has exited
+                    if return_code == 0:
+                        logger.debug("Binary test passed - clean exit")
+                        return True
+                    elif return_code == -4:  # SIGILL - Illegal instruction
+                        logger.info(f"Binary test failed: Illegal instruction (SIGILL) - binary uses unsupported CPU instructions")
                         return False
-                    # If return code is 0, continue checking output
+                    elif return_code < 0:  # Other signals
+                        logger.info(f"Binary test failed: Process terminated by signal {-return_code}")
+                        return False
+                    else:
+                        logger.info(f"Binary test failed: Process exited with code {return_code}")
+                        return False
                 
-                # Check if we got the crucial uciok response
+                # Check if we got any output indicating the engine is working
                 try:
                     if proc.stdout is not None:
                         line = proc.stdout.readline()
                         if line:
                             line = line.strip()
-                            logger.debug(f"Engine test output: {line}")
-                            if "uciok" in line:
-                                got_uciok = True
-                                logger.debug("Got uciok - binary test passed!")
-                                break
+                            logger.debug(f"Engine output: {line}")
+                            if "id name Pikafish" in line or "uciok" in line:
+                                got_response = True
+                                # Send quit and cleanup
+                                if proc.stdin is not None:
+                                    proc.stdin.write("quit\n")
+                                    proc.stdin.flush()
+                                try:
+                                    proc.wait(timeout=2)
+                                except subprocess.TimeoutExpired:
+                                    proc.kill()
+                                logger.debug("Binary test passed - got expected response")
+                                return True
                 except:
                     pass
                     
                 time.sleep(0.1)
             
-            # Clean up
+            # Timeout - kill process
+            proc.kill()
             try:
-                if proc.stdin is not None:
-                    proc.stdin.write("quit\n")
-                    proc.stdin.flush()
-                proc.wait(timeout=2)
-            except:
-                proc.kill()
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
             
-            if got_uciok:
-                logger.debug("Binary compatibility test passed")
+            if got_response:
+                logger.debug("Binary test passed - got partial response")
                 return True
             else:
-                logger.debug("Binary test failed - no uciok response")
+                logger.info("Binary test failed: No response from engine within timeout")
                 return False
             
         except Exception as e:
-            logger.debug(f"Binary test failed with exception: {e}")
+            logger.info(f"Binary test failed with exception: {e}")
             try:
                 proc.kill()
             except:
@@ -348,7 +362,7 @@ def test_binary_compatibility(engine_path: Path) -> bool:
             return False
             
     except Exception as e:
-        logger.debug(f"Failed to test binary: {e}")
+        logger.info(f"Failed to start binary test: {e}")
         return False
 
 
