@@ -8,6 +8,8 @@ import warnings
 from pathlib import Path
 from .logging_config import get_logger
 
+from tqdm import tqdm
+
 # Disable all SSL warnings for compatibility
 urllib3.disable_warnings()
 warnings.filterwarnings("ignore", message=".*urllib3.*", category=Warning)
@@ -69,6 +71,50 @@ def extract_7z_file(archive_path: Path, extract_to: Path) -> None:
         pass
     
     raise RuntimeError("Unable to extract 7z file. Please install 7z, 7za, or py7zr.")
+
+
+def download_with_progress(session: requests.Session, url: str, output_path: Path, description: str = "Downloading") -> None:
+    """Download a file with progress bar."""
+    logger = get_logger('pikafish.downloader')
+    
+    try:
+        with session.get(url, stream=True) as r:
+            r.raise_for_status()
+            total_size = int(r.headers.get('content-length', 0))
+            
+            if total_size > 0:
+                # Use tqdm progress bar
+                with tqdm(
+                    desc=description,
+                    total=total_size,
+                    unit='B',
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    ascii=True,
+                    bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]'
+                ) as pbar:
+                    with open(output_path, "wb") as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                pbar.update(len(chunk))
+            else:
+                # Fallback without progress bar
+                with open(output_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            
+        logger.info(f"Download successful: {output_path.name}")
+        
+    except Exception as e:
+        logger.info(f"Download with requests failed ({e}), trying curl...")
+        result = subprocess.run([
+            "curl", "-L", "-o", str(output_path), url
+        ], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to download with curl: {result.stderr}")
+        logger.info(f"Download successful with curl: {output_path.name}")
 
 
 def get_pikafish_path() -> Path:
@@ -145,22 +191,8 @@ def get_pikafish_path() -> Path:
 
     logger.info(f"Downloading from: {download_url}")
     
-    # Download the file
-    try:
-        with session.get(download_url, stream=True) as r:
-            r.raise_for_status()
-            with open(archive_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        logger.info("Download successful with requests.")
-    except Exception as e:
-        logger.info(f"Python requests failed ({e}), trying curl...")
-        result = subprocess.run([
-            "curl", "-L", "-o", str(archive_path), download_url
-        ], capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to download with curl: {result.stderr}")
-        logger.info("Download successful with curl.")
+    # Download the file with progress bar
+    download_with_progress(session, download_url, archive_path, "Pikafish Engine")
 
     logger.info("Extracting binary...")
     
@@ -215,6 +247,17 @@ def get_pikafish_path() -> Path:
         st = os.stat(engine_path)
         os.chmod(engine_path, st.st_mode | stat.S_IEXEC)
     
+    # Test if the binary works (especially important for virtualized environments)
+    logger.info("Testing binary compatibility...")
+    if not test_binary_compatibility(engine_path):
+        raise RuntimeError(
+            "Downloaded Pikafish binary is not compatible with this system. "
+            "This often happens in virtualized environments like Docker or GitHub Codespaces "
+            "where the binary may use CPU instructions not available in the virtual machine. "
+            "You may need to compile Pikafish from source for your specific environment, "
+            "or run this on a physical machine with full CPU instruction support."
+        )
+    
     # Download neural network file if missing
     nn_file = data_dir / "pikafish.nnue"
     if not nn_file.exists():
@@ -225,6 +268,75 @@ def get_pikafish_path() -> Path:
     return engine_path
 
 
+def test_binary_compatibility(engine_path: Path) -> bool:
+    """Test if the downloaded binary is compatible with this system."""
+    logger = get_logger('pikafish.downloader')
+    
+    try:
+        logger.debug(f"Testing binary: {engine_path}")
+        # Try to run the binary with a simple command
+        proc = subprocess.Popen(
+            [str(engine_path)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            cwd=str(engine_path.parent)
+        )
+        
+        # Send uci command and wait for response
+        try:
+            if proc.stdin is not None:
+                proc.stdin.write("uci\n")
+                proc.stdin.flush()
+            else:
+                proc.kill()
+                return False
+            
+            import time
+            start_time = time.time()
+            while time.time() - start_time < 5:  # 5 second timeout
+                if proc.poll() is not None:
+                    if proc.returncode == 0:
+                        logger.debug("Binary test passed")
+                        return True
+                    else:
+                        logger.debug(f"Binary exited with code: {proc.returncode}")
+                        return False
+                
+                # Check if we got any output
+                try:
+                    if proc.stdout is not None:
+                        line = proc.stdout.readline()
+                        if line and "id name Pikafish" in line:
+                            # Send quit and cleanup
+                            if proc.stdin is not None:
+                                proc.stdin.write("quit\n")
+                                proc.stdin.flush()
+                            proc.wait(timeout=2)
+                            logger.debug("Binary test passed")
+                            return True
+                except:
+                    pass
+                    
+                time.sleep(0.1)
+            
+            # Timeout or no proper response
+            proc.kill()
+            logger.debug("Binary test failed - timeout or no response")
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Binary test failed with exception: {e}")
+            proc.kill()
+            return False
+            
+    except Exception as e:
+        logger.debug(f"Failed to test binary: {e}")
+        return False
+
+
+
 def download_neural_network(data_dir: Path, session: requests.Session) -> None:
     """Download the required neural network file."""
     logger = get_logger('pikafish.downloader')
@@ -232,21 +344,7 @@ def download_neural_network(data_dir: Path, session: requests.Session) -> None:
     nn_path = data_dir / "pikafish.nnue"
     
     logger.info(f"Downloading neural network from: {nn_url}")
-    try:
-        with session.get(nn_url, stream=True) as r:
-            r.raise_for_status()
-            with open(nn_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        logger.info("Neural network download successful.")
-    except Exception as e:
-        logger.info(f"Failed to download neural network with requests ({e}), trying curl...")
-        result = subprocess.run([
-            "curl", "-L", "-o", str(nn_path), nn_url
-        ], capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to download neural network with curl: {result.stderr}")
-        logger.info("Neural network download successful with curl.")
+    download_with_progress(session, nn_url, nn_path, "Neural Network")
 
 
 def get_data_directory() -> Path:

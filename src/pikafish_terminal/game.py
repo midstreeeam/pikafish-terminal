@@ -18,13 +18,28 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
     logger = get_logger('pikafish.game')
     board = XiangqiBoard()
 
+    print("Initializing game engine...")
+    
+    try:
+        # Initialize engine first to download/test binary before asking for difficulty
+        temp_engine = PikafishEngine(engine_path, difficulty=None)
+        temp_engine.quit()  # Close the temporary engine
+        print("Engine initialized successfully!")
+        
+    except Exception as e:
+        logger.error(f"Engine initialization error: {e}")
+        print(f"Error initializing engine: {e}")
+        raise
+
     if difficulty is None:
         difficulty = prompt_difficulty_selection()
 
     print(f"\nStarting game with difficulty: {difficulty.name}")
-    print(f"AI will think for up to {difficulty.time_limit_ms/1000:.1f} seconds per move")
-    print("Initializing game engine...")
-
+    if difficulty.time_limit_ms is not None:
+        print(f"AI will think for up to {difficulty.time_limit_ms/1000:.1f} seconds per move")
+    else:
+        print(f"AI will search to depth {difficulty.depth}")
+    
     try:
         engine = PikafishEngine(engine_path, difficulty=difficulty)
         print("Engine initialized successfully!")

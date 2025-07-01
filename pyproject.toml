@@ -32,6 +32,7 @@ dependencies = [
     "colorama>=0.4.0",
     "urllib3>=1.26.0",
     "py7zr>=0.20.0",
+    "tqdm>=4.60.0",
 ]
 
 [project.optional-dependencies]
