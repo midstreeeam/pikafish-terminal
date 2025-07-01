@@ -23,11 +23,19 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
 
     print(f"\nStarting game with difficulty: {difficulty.name}")
     print(f"AI will think for up to {difficulty.time_limit_ms/1000:.1f} seconds per move")
+    print("Initializing game engine...")
 
-    engine = PikafishEngine(engine_path, difficulty=difficulty)
     try:
-        side_choice = input("\nChoose your side ([r]ed / [b]lack): ").strip().lower()
+        engine = PikafishEngine(engine_path, difficulty=difficulty)
+        print("Engine initialized successfully!")
+        
+        # Ensure output is flushed before prompting for input
+        sys.stdout.flush()
+        print("\nChoose your side ([r]ed / [b]lack): ", end="", flush=True)
+        side_choice = input().strip().lower()
         human_is_red = side_choice != "b"
+        
+        logger.info(f"Human playing as {'Red' if human_is_red else 'Black'}")
         engine.new_game()
 
         while True:
@@ -82,8 +90,16 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
                 display_move = board._convert_from_engine_format(best)
                 print(f"Engine plays {display_move}")
                 board.push_move(display_move)
+    except Exception as e:
+        logger.error(f"Game error: {e}")
+        print(f"Error starting game: {e}")
+        raise
     finally:
-        engine.quit()
+        try:
+            engine.quit()
+        except (NameError, AttributeError):
+            # Engine wasn't created successfully
+            pass
 
 
 def _prompt_user_move() -> Optional[str]:

@@ -1,5 +1,5 @@
-from .game import play
-from .logging_config import setup_logging
+from pikafish_terminal.game import play
+from pikafish_terminal.logging_config import setup_logging
 
 
 def main() -> None:

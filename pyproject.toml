@@ -54,6 +54,7 @@ xiangqi = "pikafish_terminal.cli:main"
 [tool.setuptools_scm]
 write_to = "src/pikafish_terminal/_version.py"
 local_scheme = "no-local-version"
+fallback_version = "1.0.0"
 
 [tool.setuptools.packages.find]
 where = ["src"]

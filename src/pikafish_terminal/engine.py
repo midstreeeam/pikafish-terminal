@@ -49,18 +49,35 @@ class PikafishEngine:
                     f"Could not find Pikafish binary '{self.path}' and failed to download it automatically. "
                     f"Error: {e}. Make sure it is on your $PATH or pass an explicit path."
                 )
-        self._proc = subprocess.Popen(
-            [self.path],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            universal_newlines=True,
-            bufsize=1,
-        )
-        self._reader_thread = threading.Thread(target=self._reader, daemon=True)
-        self._reader_thread.start()
-        self._cmd("uci")
-        self._wait_for("uciok")
-        self._ready()
+        
+        self.logger.info("Starting Pikafish engine...")
+        try:
+            self._proc = subprocess.Popen(
+                [self.path],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                bufsize=1,
+            )
+            self._reader_thread = threading.Thread(target=self._reader, daemon=True)
+            self._reader_thread.start()
+            
+            self.logger.info("Initializing UCI protocol...")
+            self._cmd("uci")
+            self._wait_for("uciok", timeout=15)
+            
+            # Set any UCI options
+            for option, value in self.uci_options.items():
+                self._cmd(f"setoption name {option} value {value}")
+            
+            self._ready()
+            self.logger.info("Engine ready!")
+            
+        except Exception as e:
+            if self._proc:
+                self._proc.terminate()
+            raise RuntimeError(f"Failed to initialize Pikafish engine: {e}")
 
     def _reader(self) -> None:
         """Background thread that continuously reads stdout from the engine."""
@@ -73,11 +90,20 @@ class PikafishEngine:
         self._proc.stdin.write(text + "\n")
         self._proc.stdin.flush()
 
-    def _wait_for(self, token: str) -> None:
+    def _wait_for(self, token: str, timeout: int = 10) -> None:
+        """Wait for a specific token in engine output with timeout."""
+        import time
+        start_time = time.time()
         while True:
-            line = self._stdout_queue.get()
-            if token in line:
-                return
+            try:
+                line = self._stdout_queue.get(timeout=1)
+                self.logger.debug(f"Engine output: {line}")
+                if token in line:
+                    return
+            except queue.Empty:
+                if time.time() - start_time > timeout:
+                    raise RuntimeError(f"Engine did not respond with '{token}' within {timeout} seconds")
+                continue
 
     def _ready(self) -> None:
         self._cmd("isready")
