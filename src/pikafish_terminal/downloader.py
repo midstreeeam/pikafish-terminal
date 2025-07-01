@@ -142,14 +142,40 @@ def get_pikafish_path() -> Path:
     data_dir.mkdir(parents=True, exist_ok=True)
     engine_path = data_dir / engine_name
     
-    if engine_path.is_file():
+    # Check if we already have a working engine
+    if engine_path.is_file() and test_binary_compatibility(engine_path):
         return engine_path
 
-    logger.info(f"Pikafish not found. Downloading latest version to {data_dir}...")
+    logger.info(f"Pikafish not found or incompatible. Trying multiple instruction sets for compatibility...")
     
     # Create a session with SSL verification disabled to handle SSL issues
     session = requests.Session()
     session.verify = False
+    
+    # Try multiple instruction sets in order of compatibility
+    # Based on https://www.pikafish.com/ - different instruction sets for different environments
+    if system == "Darwin":
+        instruction_sets = ["apple-silicon"]  # macOS only has one variant
+    else:
+        instruction_sets = [
+            "sse41-popcnt",  # Most compatible for virtualized environments
+            "ssse3",         # Fallback for older systems
+            "avx2",          # Good performance but may not work in VMs
+            "bmi2",          # Higher performance
+            # Skip the highest performance ones as they're likely to fail in VMs
+        ]
+    
+    return download_compatible_binary(data_dir, engine_name, session, instruction_sets)
+
+
+def download_compatible_binary(data_dir: Path, engine_name: str, session: requests.Session, instruction_sets: list) -> Path:
+    """Download archive and test multiple instruction set variants until we find a compatible one."""
+    logger = get_logger('pikafish.downloader')
+    system = platform.system()
+    
+    # Download the main archive once
+    logger.info("Downloading Pikafish archive with all instruction set variants...")
+    print("📥 Downloading Pikafish engine variants...")
     
     try:
         # Get the latest release info from GitHub API
@@ -158,82 +184,141 @@ def get_pikafish_path() -> Path:
         response.raise_for_status()
         release_data = response.json()
         
-        # Find the main release asset (should be .7z file)
+        # Find the main release asset
         assets = release_data["assets"]
         asset = None
         
-        # Look for .7z file first
         for a in assets:
             if a["name"].endswith(".7z"):
                 asset = a
                 break
         
-        # Fallback: look for any compressed file
         if not asset:
-            for a in assets:
-                if any(a["name"].endswith(ext) for ext in [".zip", ".tar.gz", ".tar.bz2"]):
-                    asset = a
-                    break
-        
-        if not asset:
-            raise RuntimeError("Could not find a suitable release asset")
+            raise RuntimeError("Could not find release archive")
 
         download_url = asset["browser_download_url"]
         filename = asset["name"]
         
     except Exception as e:
-        logger.info(f"GitHub API failed ({e}), trying fallback direct download...")
-        # Fallback to known download URL
+        logger.info(f"GitHub API failed ({e}), using fallback...")
         download_url = "https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2025-06-23/Pikafish.2025-06-23.7z"
         filename = "Pikafish.2025-06-23.7z"
 
     archive_path = data_dir / filename
-
-    logger.info(f"Downloading from: {download_url}")
     
     # Download the file with progress bar
-    download_with_progress(session, download_url, archive_path, "Pikafish Engine")
+    download_with_progress(session, download_url, archive_path, "Pikafish Archive")
 
-    logger.info("Extracting binary...")
+    logger.info("Extracting and testing instruction set variants...")
+    print("📦 Extracting instruction set variants...")
     
     # Create temporary extraction directory
     extract_dir = data_dir / "temp_extract"
     extract_dir.mkdir(exist_ok=True)
     
     try:
-        # Extract based on file type
+        # Extract the archive
         if filename.endswith(".7z"):
             extract_7z_file(archive_path, extract_dir)
         elif filename.endswith(".zip"):
             import zipfile
             with zipfile.ZipFile(archive_path, "r") as zip_ref:
                 zip_ref.extractall(extract_dir)
-        elif filename.endswith((".tar.gz", ".tar.bz2")):
-            import tarfile
-            with tarfile.open(archive_path, "r:*") as tar_ref:
-                tar_ref.extractall(extract_dir)
         else:
             raise RuntimeError(f"Unsupported archive format: {filename}")
         
-        # Find the binary in extracted files
-        binary_found = False
+        # Find all potential binaries in the extracted files
+        potential_binaries = []
         for root, dirs, files in os.walk(extract_dir):
             for file in files:
-                # Look for pikafish executable
-                if (file.lower() == engine_name.lower() or 
-                    file.lower().startswith("pikafish") and 
-                    (system == "Windows" and file.endswith(".exe") or system != "Windows" and not "." in file)):
+                file_lower = file.lower()
+                # Look for pikafish binaries (with or without instruction set suffix)
+                if (file_lower.startswith("pikafish") and 
+                    (system == "Windows" and file.endswith(".exe") or 
+                     system != "Windows" and not "." in file)):
                     
-                    found_path = Path(root) / file
-                    found_path.rename(engine_path)
-                    binary_found = True
-                    break
-            if binary_found:
-                break
+                    # Filter by platform directory structure
+                    root_path = Path(root)
+                    if system == "Windows" and "windows" in str(root_path).lower():
+                        potential_binaries.append(root_path / file)
+                    elif system == "Linux" and "linux" in str(root_path).lower():
+                        potential_binaries.append(root_path / file)
+                    elif system == "Darwin" and "macos" in str(root_path).lower():
+                        potential_binaries.append(root_path / file)
         
-        if not binary_found:
-            raise RuntimeError(f"Could not find {engine_name} in extracted files")
+        if not potential_binaries:
+            raise RuntimeError("Could not find any Pikafish binaries in archive")
+        
+        logger.info(f"Found {len(potential_binaries)} potential binaries")
+        print(f"🔍 Found {len(potential_binaries)} engine variants to test")
+        
+        # Sort binaries by instruction set preference
+        def instruction_set_priority(binary_path):
+            name = binary_path.name.lower()
+            for i, instruction_set in enumerate(instruction_sets):
+                if instruction_set in name:
+                    return i
+            return len(instruction_sets)  # Unknown instruction sets go last
+        
+        potential_binaries.sort(key=instruction_set_priority)
+        
+        # Test each binary until we find a compatible one
+        for binary_path in potential_binaries:
+            instruction_set = "unknown"
+            for inst_set in instruction_sets:
+                if inst_set in binary_path.name.lower():
+                    instruction_set = inst_set
+                    break
             
+            logger.info(f"Testing binary: {binary_path.name}")
+            print(f"🔄 Testing {instruction_set}: {binary_path.name}")
+            
+            # Copy to final location for testing
+            engine_path = data_dir / engine_name
+            if engine_path.exists():
+                engine_path.unlink()
+                
+            import shutil
+            shutil.copy2(binary_path, engine_path)
+            
+            # Make executable on Unix-like systems
+            if system != "Windows":
+                st = os.stat(engine_path)
+                os.chmod(engine_path, st.st_mode | stat.S_IEXEC)
+            
+            # Test compatibility
+            if test_binary_compatibility(engine_path):
+                logger.info(f"Found compatible binary: {binary_path.name}")
+                print(f"✅ Compatible engine found: {instruction_set}")
+                
+                # Extract neural network file from archive if it exists and we don't have it
+                nn_file = data_dir / "pikafish.nnue"
+                if not nn_file.exists():
+                    # Look for neural network file in extracted directory
+                    for root, dirs, files in os.walk(extract_dir):
+                        for file in files:
+                            if file.lower() == "pikafish.nnue":
+                                nn_source = Path(root) / file
+                                import shutil
+                                shutil.copy2(nn_source, nn_file)
+                                logger.info("Extracted neural network file from archive")
+                                print("📦 Extracted neural network file")
+                                break
+                        else:
+                            continue
+                        break
+                    
+                    # If still not found, download it separately (fallback)
+                    if not nn_file.exists():
+                        logger.info("Neural network not found in archive, downloading separately...")
+                        print("📥 Downloading neural network file...")
+                        download_neural_network(data_dir, session)
+                
+                return engine_path
+            else:
+                logger.info(f"Binary {binary_path.name} not compatible")
+                print(f"❌ {instruction_set} not compatible")
+                
     finally:
         # Clean up
         if archive_path.exists():
@@ -241,31 +326,21 @@ def get_pikafish_path() -> Path:
         if extract_dir.exists():
             import shutil
             shutil.rmtree(extract_dir)
+    
+    # If we get here, none of the binaries worked
+    num_tested = len([b for b in potential_binaries if b.exists()]) if 'potential_binaries' in locals() else 0
+    raise RuntimeError(
+        "Could not find a compatible Pikafish binary for this system.\n"
+        f"Tested {num_tested} instruction set variants.\n\n"
+        "This often happens in highly restricted virtualized environments like GitHub Codespaces.\n"
+        "The environment may not support running any x86_64 binaries.\n\n"
+        "Solutions:\n"
+        "• Try running on a physical machine\n"
+        "• Use a different development environment\n"
+        "• Run 'pikafish --diagnose' for system compatibility info\n"
+        "• Some cloud environments may block binary execution entirely"
+    )
 
-    # Make executable on Unix-like systems
-    if system != "Windows":
-        st = os.stat(engine_path)
-        os.chmod(engine_path, st.st_mode | stat.S_IEXEC)
-    
-    # Test if the binary works (especially important for virtualized environments)
-    logger.info("Testing binary compatibility...")
-    if not test_binary_compatibility(engine_path):
-        raise RuntimeError(
-            "Downloaded Pikafish binary is not compatible with this system. "
-            "This often happens in virtualized environments like Docker or GitHub Codespaces "
-            "where the binary may use CPU instructions not available in the virtual machine. "
-            "You may need to compile Pikafish from source for your specific environment, "
-            "or run this on a physical machine with full CPU instruction support."
-        )
-    
-    # Download neural network file if missing
-    nn_file = data_dir / "pikafish.nnue"
-    if not nn_file.exists():
-        logger.info("Downloading neural network file...")
-        download_neural_network(data_dir, session)
-    
-    logger.info("Download and extraction complete.")
-    return engine_path
 
 
 def test_binary_compatibility(engine_path: Path) -> bool:
