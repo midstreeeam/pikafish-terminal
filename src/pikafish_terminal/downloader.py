@@ -91,12 +91,7 @@ def get_pikafish_path() -> Path:
         return engine_path_dev
     
     # Use user data directory for installed package
-    if system == "Windows":
-        data_dir = Path.home() / "AppData" / "Local" / "pikafish-terminal"
-    elif system == "Darwin":  # macOS
-        data_dir = Path.home() / "Library" / "Application Support" / "pikafish-terminal"
-    else:  # Linux and others
-        data_dir = Path.home() / ".local" / "share" / "pikafish-terminal"
+    data_dir = get_user_data_directory(system)
     
     data_dir.mkdir(parents=True, exist_ok=True)
     engine_path = data_dir / engine_name
@@ -252,3 +247,63 @@ def download_neural_network(data_dir: Path, session: requests.Session) -> None:
         if result.returncode != 0:
             raise RuntimeError(f"Failed to download neural network with curl: {result.stderr}")
         logger.info("Neural network download successful with curl.")
+
+
+def get_data_directory() -> Path:
+    """Get the platform-specific data directory where Pikafish files are stored."""
+    system = platform.system()
+    
+    if system == "Windows":
+        return Path.home() / "AppData" / "Local" / "pikafish-terminal"
+    elif system == "Darwin":  # macOS
+        return Path.home() / "Library" / "Application Support" / "pikafish-terminal"
+    else:  # Linux and others
+        return Path.home() / ".local" / "share" / "pikafish-terminal"
+
+
+def cleanup_data_directory() -> None:
+    """Remove all downloaded Pikafish files and the data directory."""
+    import shutil
+    
+    logger = get_logger('pikafish.downloader')
+    data_dir = get_data_directory()
+    
+    if not data_dir.exists():
+        logger.info("No data directory found - nothing to clean up.")
+        return
+    
+    logger.info(f"Removing Pikafish data directory: {data_dir}")
+    try:
+        shutil.rmtree(data_dir)
+        logger.info("Data directory successfully removed.")
+    except Exception as e:
+        logger.error(f"Failed to remove data directory: {e}")
+        raise
+
+
+def get_downloaded_files_info() -> dict:
+    """Get information about downloaded files."""
+    data_dir = get_data_directory()
+    
+    if not data_dir.exists():
+        return {"exists": False, "path": str(data_dir), "files": [], "total_size": 0}
+    
+    files = []
+    total_size = 0
+    
+    for file_path in data_dir.rglob("*"):
+        if file_path.is_file():
+            size = file_path.stat().st_size
+            files.append({
+                "name": file_path.name,
+                "path": str(file_path.relative_to(data_dir)),
+                "size": size
+            })
+            total_size += size
+    
+    return {
+        "exists": True,
+        "path": str(data_dir),
+        "files": files,
+        "total_size": total_size
+    }

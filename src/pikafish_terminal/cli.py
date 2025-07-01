@@ -14,6 +14,7 @@ from pathlib import Path
 from .logging_config import setup_logging
 from .game import play
 from .difficulty import list_difficulty_levels, get_difficulty_level
+from .downloader import cleanup_data_directory, get_downloaded_files_info
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -27,6 +28,8 @@ Examples:
   pikafish                    # Start game with default settings
   pikafish --difficulty 5     # Play against expert level
   xiangqi --engine ./pikafish # Use custom engine path
+  pikafish --info             # Show info about downloaded files
+  pikafish --cleanup          # Remove all downloaded files
   
 {list_difficulty_levels()}
 
@@ -61,6 +64,18 @@ Environment Variables:
         help="List all available difficulty levels and exit"
     )
     
+    parser.add_argument(
+        "--cleanup",
+        action="store_true", 
+        help="Remove all downloaded game files (engine and neural network) and exit"
+    )
+    
+    parser.add_argument(
+        "--info",
+        action="store_true",
+        help="Show information about downloaded files and exit"
+    )
+    
     return parser
 
 
@@ -81,6 +96,41 @@ def main() -> None:
     # Handle special commands
     if args.list_difficulties:
         print(list_difficulty_levels())
+        sys.exit(0)
+    
+    if args.info:
+        info = get_downloaded_files_info()
+        if not info["exists"]:
+            print(f"No downloaded files found.")
+            print(f"Files would be stored in: {info['path']}")
+        else:
+            print(f"Downloaded files location: {info['path']}")
+            print(f"Total files: {len(info['files'])}")
+            print(f"Total size: {info['total_size'] / (1024*1024):.1f} MB")
+            print("\nFiles:")
+            for file in info["files"]:
+                print(f"  {file['name']} ({file['size'] / (1024*1024):.1f} MB)")
+        sys.exit(0)
+    
+    if args.cleanup:
+        info = get_downloaded_files_info()
+        if not info["exists"]:
+            print("No downloaded files found - nothing to clean up.")
+            sys.exit(0)
+        
+        print(f"This will remove all downloaded Pikafish files from:")
+        print(f"  {info['path']}")
+        print(f"Total size: {info['total_size'] / (1024*1024):.1f} MB")
+        
+        try:
+            confirm = input("\nAre you sure? (y/N): ").strip().lower()
+            if confirm in ('y', 'yes'):
+                cleanup_data_directory()
+                print("Successfully removed all downloaded files.")
+            else:
+                print("Cleanup cancelled.")
+        except KeyboardInterrupt:
+            print("\nCleanup cancelled.")
         sys.exit(0)
     
     # Initialize logging
