@@ -91,7 +91,7 @@ def get_pikafish_path() -> Path:
         return engine_path_dev
     
     # Use user data directory for installed package
-    data_dir = get_user_data_directory(system)
+    data_dir = get_data_directory()
     
     data_dir.mkdir(parents=True, exist_ok=True)
     engine_path = data_dir / engine_name

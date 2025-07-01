@@ -4,11 +4,12 @@ import sys
 from pathlib import Path
 
 
-def setup_logging() -> logging.Logger:
+def setup_logging(log_level = None, log_file = None) -> logging.Logger:
     """Set up logging configuration for the pikafish terminal application."""
     
     # Get log level from environment variable, default to INFO
-    log_level = os.getenv('PIKAFISH_LOG_LEVEL', 'INFO').upper()
+    if log_level is None:
+        log_level = os.getenv('PIKAFISH_LOG_LEVEL', 'INFO').upper()
     
     # Validate log level
     valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
@@ -37,7 +38,8 @@ def setup_logging() -> logging.Logger:
     logger.addHandler(console_handler)
     
     # Optionally create file handler if log file is specified
-    log_file = os.getenv('PIKAFISH_LOG_FILE')
+    if log_file is None:
+        log_file = os.getenv('PIKAFISH_LOG_FILE')
     if log_file:
         try:
             log_path = Path(log_file)
