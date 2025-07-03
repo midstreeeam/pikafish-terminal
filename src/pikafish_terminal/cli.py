@@ -11,7 +11,7 @@ import argparse
 
 from .logging_config import setup_logging
 from .game import play
-from .difficulty import list_difficulty_levels, get_difficulty_level
+from .difficulty import list_difficulty_levels, create_custom_difficulty
 from .downloader import cleanup_data_directory, get_downloaded_files_info
 from .config import get_config
 
@@ -25,16 +25,14 @@ def create_parser() -> argparse.ArgumentParser:
         epilog=f"""
 Examples:
   pikafish                      # Start game with default settings
-  pikafish --difficulty 5       # Play against expert level (1-5)
+  pikafish --difficulty 3       # Use difficulty from config (by number or name)
   pikafish --difficulty quick_game  # Use named difficulty from config
   pikafish --depth 12           # Custom difficulty with depth 12
-  pikafish --time 5.0           # Custom difficulty with 5 second thinking time
+  pikafish --time 2.0           # Custom difficulty with 2 second thinking time
   pikafish --depth 15 --time 3  # Custom difficulty with both depth and time
-  xiangqi --engine ./pikafish   # Use custom engine path
-  pikafish --info               # Show info about downloaded files
-  pikafish --cleanup            # Remove all downloaded files
-  pikafish --log-level DEBUG    # Enable debug logging
   pikafish --config-list        # List all configuration values
+  pikafish --info               # Show info about downloaded files  
+  pikafish --cleanup            # Remove all downloaded files
   
 {list_difficulty_levels()}
 
@@ -55,7 +53,7 @@ Environment Variables:
     
     difficulty_group.add_argument(
         "--difficulty",
-        help="Difficulty level: number (1-5) or name (e.g., 'quick_game', 'analysis_mode')"
+        help="Difficulty from config: number or name (e.g., '3', 'quick_game', 'analysis_mode')"
     )
     
     difficulty_group.add_argument(
@@ -215,40 +213,31 @@ def main() -> None:
         print("Use either predefined difficulty levels (--difficulty) or custom settings (--depth/--time)")
         sys.exit(1)
     
-    # Handle predefined difficulty (number or name)
+    # Handle difficulty from config (number or name)
     if args.difficulty:
-        # First try the hardcoded difficulty levels (1-5)
-        try:
-            difficulty_num = int(args.difficulty)
-            if 1 <= difficulty_num <= 5:
-                difficulty = get_difficulty_level(difficulty_num)
-            else:
-                raise ValueError(f"Difficulty level must be between 1 and 5, got {difficulty_num}")
-        except ValueError:
-            # If not a number, try to get from config by name
-            if config is None:
-                print("Error: Named difficulty presets require a valid config file")
-                sys.exit(1)
-                
-            custom_config = config.get_difficulty(args.difficulty)
-            if custom_config is None:
-                print(f"Error: Difficulty '{args.difficulty}' not found")
-                print("Available difficulties:")
-                all_diffs = config.get('difficulties', {})
-                if isinstance(all_diffs, dict):
-                    for identifier in all_diffs.keys():
-                        print(f"  {identifier}")
-                sys.exit(1)
+        if config is None:
+            print("Error: Difficulty selection requires a valid config file")
+            sys.exit(1)
             
-            # Create difficulty from config
-            from .difficulty import DifficultyLevel
-            difficulty = DifficultyLevel(
-                name=custom_config['name'],
-                description=custom_config['description'],
-                depth=custom_config['depth'],
-                time_limit_ms=custom_config.get('time_limit_ms'),
-                uci_options=custom_config.get('uci_options', {})
-            )
+        custom_config = config.get_difficulty(args.difficulty)
+        if custom_config is None:
+            print(f"Error: Difficulty '{args.difficulty}' not found")
+            print("Available difficulties:")
+            all_diffs = config.get('difficulties', {})
+            if isinstance(all_diffs, dict):
+                for identifier in all_diffs.keys():
+                    print(f"  {identifier}")
+            sys.exit(1)
+        
+        # Create difficulty from config
+        from .difficulty import DifficultyLevel
+        difficulty = DifficultyLevel(
+            name=custom_config['name'],
+            description=custom_config['description'],
+            depth=custom_config['depth'],
+            time_limit_ms=custom_config.get('time_limit_ms'),
+            uci_options=custom_config.get('uci_options', {})
+        )
     
     # Handle custom difficulty
     elif args.depth or args.time:

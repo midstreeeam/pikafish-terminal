@@ -6,7 +6,7 @@ from typing import Optional
 from .board import XiangqiBoard
 from .engine import PikafishEngine
 from .ui import render
-from .difficulty import prompt_difficulty_selection, DifficultyLevel, create_custom_difficulty
+from .difficulty import DifficultyLevel, create_custom_difficulty
 from .logging_config import get_logger
 from .config import get_config, ConfigError
 
@@ -73,13 +73,21 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
     elif difficulty is None:
         # Try to use default difficulty from config
         default_level = config.get_required('game.default_difficulty')
-        try:
-            from .difficulty import get_difficulty_level
-            difficulty = get_difficulty_level(default_level)
+        difficulty_config = config.get_difficulty(default_level)
+        if difficulty_config:
+            from .difficulty import DifficultyLevel
+            difficulty = DifficultyLevel(
+                name=difficulty_config['name'],
+                description=difficulty_config['description'],
+                depth=difficulty_config['depth'],
+                time_limit_ms=difficulty_config.get('time_limit_ms'),
+                uci_options=difficulty_config.get('uci_options', {})
+            )
             print(f"Using default difficulty level {default_level} from configuration")
-        except ValueError:
-            # Fall back to prompting user
-            difficulty = prompt_difficulty_selection()
+        else:
+            # Fall back to creating a basic difficulty
+            difficulty = create_custom_difficulty(depth=5, time_limit_ms=1000)
+            print("Using fallback difficulty: Medium")
 
     print(f"\nStarting game with difficulty: {difficulty.name}")
     if difficulty.time_limit_ms is not None:

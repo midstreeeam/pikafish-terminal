@@ -17,15 +17,21 @@ pikafish
 ## Controls
 
 - Enter moves like `1013` (from position 1,0 to 1,3)
+- Type `h` for move hints
+- Type `s` to toggle score display
 - Type `quit` to exit
-- Use `--difficulty 1-6` for different AI levels
 
 ## Examples
 
 ```bash
-pikafish --difficulty 5    # Expert level
-pikafish --log-level DEBUG # Debug mode
-pikafish --info            # Show downloaded files
+pikafish --difficulty 3     # Medium level (1-5)
+pikafish --depth 10         # Custom depth
+pikafish --time 2.0         # Custom time limit
+pikafish --config-list      # Show all settings
 ```
+
+## Configuration
+
+Settings are stored in `config.yaml` (auto-created). Edit this file to customize difficulties, hints, and display options.
 
 That's it! The AI engine downloads automatically on first run.
