@@ -1,6 +1,7 @@
 include README.md
 include LICENSE
 include pyproject.toml
+include config.yaml
 recursive-include src/pikafish_terminal *.py
 exclude src/pikafish_terminal/_version.py
 global-exclude *.pyc

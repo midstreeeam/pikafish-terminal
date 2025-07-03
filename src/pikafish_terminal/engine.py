@@ -4,11 +4,12 @@ import queue
 import os
 import shutil
 import time
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 from .downloader import get_pikafish_path
 from .difficulty import DifficultyLevel
 from .logging_config import get_logger
+from .config import get_config
 
 
 class PikafishEngine:
@@ -251,6 +252,121 @@ class PikafishEngine:
             except queue.Empty:
                 if time.time() - start_time > timeout:
                     raise RuntimeError(f"Engine did not respond within {timeout} seconds")
+
+    def get_candidate_moves(self, fen: str, moves: List[str], max_moves: int = 3) -> List[Tuple[str, int]]:
+        """Get top candidate moves with their scores for hints.
+        
+        Returns:
+            List of (move, score) tuples, sorted by score (best first)
+        """
+        config = get_config()
+        
+        # Clear the queue first
+        while not self._stdout_queue.empty():
+            try:
+                self._stdout_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        pos_cmd = f"position fen {fen}"
+        if moves:
+            pos_cmd += " moves " + " ".join(moves)
+        self._cmd(pos_cmd)
+        
+        # Try to use MultiPV (Multiple Principal Variations) for better candidate moves
+        # This tells the engine to show multiple best moves
+        max_moves = min(max_moves, config.get_required('hints.max_count'))  # Use config limit
+        self._cmd(f"setoption name MultiPV value {max_moves}")
+        
+        # Use config values for hint calculation
+        hint_depth = min(self.depth, config.get_required('hints.depth'))
+        hint_time = min(self.time_limit_ms or config.get_required('hints.time_limit_ms'), 
+                       config.get_required('hints.time_limit_ms'))
+        
+        if self.time_limit_ms is not None:
+            go_cmd = f"go movetime {hint_time}"
+        else:
+            go_cmd = f"go depth {hint_depth}"
+        
+        self._cmd(go_cmd)
+        
+        candidate_moves: Dict[str, int] = {}  # move -> score
+        move_ranks: Dict[str, int] = {}  # move -> rank (for MultiPV)
+        timeout = config.get_required('engine.move_timeout') // 6  # Use fraction of move timeout for hints
+        start_time = time.time()
+        
+        while True:
+            try:
+                line = self._stdout_queue.get(timeout=0.5)
+                
+                # Parse "info" lines that contain move evaluations
+                if line.startswith("info") and "pv" in line and "score" in line:
+                    parts = line.split()
+                    try:
+                        # Check if this is a MultiPV line
+                        multipv_rank = 1  # Default rank
+                        if "multipv" in parts:
+                            multipv_idx = parts.index("multipv")
+                            if multipv_idx + 1 < len(parts):
+                                multipv_rank = int(parts[multipv_idx + 1])
+                        
+                        # Find the principal variation (pv) move
+                        pv_idx = parts.index("pv")
+                        if pv_idx + 1 < len(parts):
+                            move = parts[pv_idx + 1]
+                            
+                            # Find the score
+                            score_idx = parts.index("score")
+                            if score_idx + 2 < len(parts):
+                                score_type = parts[score_idx + 1]  # "cp" or "mate"
+                                score_value = int(parts[score_idx + 2])
+                                
+                                # Convert mate scores to very high/low values
+                                if score_type == "mate":
+                                    if score_value > 0:
+                                        score = 10000 - score_value  # Mate in N moves
+                                    else:
+                                        score = -10000 - score_value  # Mated in N moves
+                                else:
+                                    score = score_value  # Centipawn score
+                                
+                                # Store the move and its rank
+                                candidate_moves[move] = score
+                                move_ranks[move] = multipv_rank
+                                
+                    except (ValueError, IndexError):
+                        continue
+                
+                elif line.startswith("bestmove"):
+                    # Final best move
+                    parts = line.split()
+                    if len(parts) > 1 and parts[1] not in ["(none)", "0000"]:
+                        # Ensure the best move is included
+                        if parts[1] not in candidate_moves:
+                            candidate_moves[parts[1]] = 0  # Default score if not found
+                            move_ranks[parts[1]] = 1
+                    break
+                    
+            except queue.Empty:
+                if time.time() - start_time > timeout:
+                    break
+        
+        # Reset MultiPV to 1 after getting hints
+        self._cmd("setoption name MultiPV value 1")
+        
+        # Sort by MultiPV rank first (if available), then by score
+        if move_ranks and candidate_moves:
+            # Sort by MultiPV rank (lower rank = better move)
+            sorted_moves = sorted(candidate_moves.items(), 
+                                key=lambda x: (move_ranks.get(x[0], 999), -x[1]))
+        elif candidate_moves:
+            # Fall back to sorting by score only
+            sorted_moves = sorted(candidate_moves.items(), key=lambda x: x[1], reverse=True)
+        else:
+            # No moves found
+            return []
+        
+        return sorted_moves[:max_moves]
 
     def is_game_over(self, fen: str, moves: List[str]) -> Tuple[bool, str]:
         """Check if the game is over (checkmate, stalemate, etc). Returns (is_over, reason)."""

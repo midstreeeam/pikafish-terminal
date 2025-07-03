@@ -6,7 +6,7 @@ def main() -> None:
     """Entry point for the pikafish-terminal application."""
     # Initialize logging system
     setup_logging()
-    play()
+    play(depth=1, time_limit_ms=100)
 
 
 if __name__ == "__main__":
