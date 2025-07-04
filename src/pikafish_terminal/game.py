@@ -74,7 +74,7 @@ def _display_game_state(board: XiangqiBoard, engine: PikafishEngine, score_displ
     
     # Display score history if enabled
     if score_display_enabled and move_history:
-        _display_score_history(engine, board, move_history, current_score)
+        _display_score_history(engine, board, move_history, current_score, human_is_red)
     
     # Display turn information
     is_red_turn = len(board.move_history) % 2 == 0
@@ -96,26 +96,33 @@ def _display_game_state(board: XiangqiBoard, engine: PikafishEngine, score_displ
         print(f"\n{status_message}")
 
 
-def _display_score_history(engine: PikafishEngine, board: XiangqiBoard, move_history: List[MoveHistoryEntry], current_score: Optional[int] = None) -> None:
+def _display_score_history(engine: PikafishEngine, board: XiangqiBoard, move_history: List[MoveHistoryEntry], 
+                          current_score: Optional[int] = None, human_is_red: bool = True) -> None:
     """Display the move history with scores, color-coded by player."""
     try:
         config = get_config()
-        history_length = int(config.get_required('game.move_history_length'))
+        history_length_raw = config.get_required('game.move_history_length')
+        history_length = int(history_length_raw) if isinstance(history_length_raw, (int, float, str)) else 6
         
         # Use cached score if provided, otherwise calculate it
         if current_score is None:
             current_score = engine.get_position_evaluation(board.board_to_fen(), board.move_history)
         
+        # Flip scores for Black player perspective
+        display_current_score = current_score if human_is_red else -current_score
+        
         # Format current score
-        if current_score > 9000:
-            current_str = f"Mate in {10000 - current_score} for Red"
-        elif current_score < -9000:
-            current_str = f"Mate in {-10000 - current_score} for Black"
+        if display_current_score > 9000:
+            player_name = "Red" if human_is_red else "Black"
+            current_str = f"Mate in {10000 - display_current_score} for {player_name}"
+        elif display_current_score < -9000:
+            opponent_name = "Black" if human_is_red else "Red"
+            current_str = f"Mate in {-10000 - display_current_score} for {opponent_name}"
         else:
-            if current_score > 0:
-                current_str = f"+{current_score} cp"
-            elif current_score < 0:
-                current_str = f"{current_score} cp"
+            if display_current_score > 0:
+                current_str = f"+{display_current_score} cp"
+            elif display_current_score < 0:
+                current_str = f"{display_current_score} cp"
             else:
                 current_str = "0 cp"
         
@@ -129,16 +136,21 @@ def _display_score_history(engine: PikafishEngine, board: XiangqiBoard, move_his
             recent_moves = move_history[-history_length:] if len(move_history) > history_length else move_history
             
             for entry in reversed(recent_moves):
-                # All scores are already from Red's perspective, so just format them
-                if entry.score > 9000:
-                    score_str = f"Mate in {10000 - entry.score} for Red"
-                elif entry.score < -9000:
-                    score_str = f"Mate in {-10000 - entry.score} for Black"
+                # Flip score for Black player perspective
+                display_score = entry.score if human_is_red else -entry.score
+                
+                # Format the score
+                if display_score > 9000:
+                    player_name = "Red" if human_is_red else "Black"
+                    score_str = f"Mate in {10000 - display_score} for {player_name}"
+                elif display_score < -9000:
+                    opponent_name = "Black" if human_is_red else "Red"
+                    score_str = f"Mate in {-10000 - display_score} for {opponent_name}"
                 else:
-                    if entry.score > 0:
-                        score_str = f"+{entry.score} cp"
-                    elif entry.score < 0:
-                        score_str = f"{entry.score} cp"
+                    if display_score > 0:
+                        score_str = f"+{display_score} cp"
+                    elif display_score < 0:
+                        score_str = f"{display_score} cp"
                     else:
                         score_str = "0 cp"
                 
@@ -315,7 +327,7 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
                     except (ValueError, IndexError):
                         # Use default from config
                         default_hints_raw = config.get_required('hints.default_count')
-                        default_hints = int(default_hints_raw) if default_hints_raw is not None else 3
+                        default_hints = int(default_hints_raw) if isinstance(default_hints_raw, (int, float, str)) else 3
                         _display_hints(engine, board, human_is_red, max_moves=default_hints)
                     
                     # Pause to let user read hints, then continue
@@ -427,7 +439,8 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
                                    last_move=last_move, move_history=move_history, current_score=cached_score)
                 
                 # Use configurable pause duration
-                pause_duration = float(config.get_required('ui.ai_move_pause_seconds'))
+                pause_duration_raw = config.get_required('ui.ai_move_pause_seconds')
+                pause_duration = float(pause_duration_raw) if isinstance(pause_duration_raw, (int, float, str)) else 1.0
                 time.sleep(pause_duration)
     except Exception as e:
         logger.error(f"Game error: {e}")
@@ -445,14 +458,15 @@ def _prompt_user_move() -> Optional[str]:
     """Prompt until a move string is received or the user quits."""
     config = get_config()
     prompt_style = config.get_required('ui.prompt_style')
-    default_hints = config.get_required('hints.default_count')
+    default_hints_raw = config.get_required('hints.default_count')
+    default_hints = int(default_hints_raw) if isinstance(default_hints_raw, (int, float, str)) else 3
     
     while True:
         raw = input(str(prompt_style)).strip().lower()
         if raw in {"quit", "exit", "q"}:
             return None
         if raw in {"h", "help", "hint"}:
-            return f"HINT:{int(default_hints) if default_hints is not None else 3}"  # Use config default
+            return f"HINT:{default_hints}"
         if raw.startswith("hint "):
             # Parse "hint n" format
             parts = raw.split()
@@ -460,7 +474,7 @@ def _prompt_user_move() -> Optional[str]:
                 try:
                     num_hints = int(parts[1])
                     max_hints_raw = config.get_required('hints.max_count')
-                    max_hints = int(max_hints_raw) if max_hints_raw is not None else 10
+                    max_hints = int(max_hints_raw) if isinstance(max_hints_raw, (int, float, str)) else 10
                     if 1 <= num_hints <= max_hints:
                         return f"HINT:{num_hints}"
                     else:
