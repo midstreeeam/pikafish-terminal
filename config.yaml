@@ -1,13 +1,14 @@
 game:
   show_score: true
   default_difficulty: 1
+  move_history_length: 5
 scoring:
   depth: 25
   time_limit_ms: 2000
 hints:
   default_count: 3
   max_count: 10
-  depth: 10
+  depth: 30
   time_limit_ms: 3000
   show_scores: true
 difficulties:
@@ -52,4 +53,5 @@ ui:
   board_style: ascii
   coordinate_notation: numeric
   prompt_style: '(pikafish) > '
+  ai_move_pause_seconds: 0.0
 advanced: {}

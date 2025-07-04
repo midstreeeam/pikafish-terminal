@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import sys
-from typing import Optional
+import time
+from typing import Optional, List, NamedTuple
+from colorama import Fore, Style
 
 from .board import XiangqiBoard
 from .engine import PikafishEngine
@@ -12,6 +14,112 @@ from .config import get_config, ConfigError
 
 
 PROMPT = "(pikafish) > "
+
+
+class MoveHistoryEntry(NamedTuple):
+    """Represents a move in the game history with its evaluation."""
+    move: str
+    score: int
+    is_red_move: bool
+    move_number: int
+
+
+def _clear_screen() -> None:
+    """Clear the terminal screen and move cursor to top-left."""
+    print("\033[H\033[J", end="", flush=True)
+
+
+def _display_game_state(board: XiangqiBoard, engine: PikafishEngine, score_display_enabled: bool, 
+                       human_is_red: bool, status_message: str = "", last_move: str = "", 
+                       move_history: Optional[List[MoveHistoryEntry]] = None, current_score: Optional[int] = None) -> None:
+    """Display the current game state with board, score history, and turn information."""
+    _clear_screen()
+    
+    # Display the board with move highlighting
+    print(render(board.ascii(), last_move=last_move))
+    
+    # Display score history if enabled
+    if score_display_enabled and move_history:
+        _display_score_history(engine, board, move_history, current_score)
+    
+    # Display turn information
+    is_red_turn = len(board.move_history) % 2 == 0
+    human_turn = (human_is_red and is_red_turn) or (not human_is_red and not is_red_turn)
+    
+    if human_turn:
+        side_name = "Red" if is_red_turn else "Black"
+        print(f"\n{side_name} to move (You)")
+    else:
+        side_name = "Red" if is_red_turn else "Black"
+        print(f"\n{side_name} to move (Engine)")
+    
+    # Display last move information
+    if last_move:
+        print(f"Last move: {last_move}")
+    
+    # Display any status message
+    if status_message:
+        print(f"\n{status_message}")
+
+
+def _display_score_history(engine: PikafishEngine, board: XiangqiBoard, move_history: List[MoveHistoryEntry], current_score: Optional[int] = None) -> None:
+    """Display the move history with scores, color-coded by player."""
+    try:
+        config = get_config()
+        history_length = int(config.get_required('game.move_history_length'))
+        
+        # Use cached score if provided, otherwise calculate it
+        if current_score is None:
+            current_score = engine.get_position_evaluation(board.board_to_fen(), board.move_history)
+        
+        # Format current score
+        if current_score > 9000:
+            current_str = f"Mate in {10000 - current_score} for Red"
+        elif current_score < -9000:
+            current_str = f"Mate in {-10000 - current_score} for Black"
+        else:
+            if current_score > 0:
+                current_str = f"+{current_score} cp"
+            elif current_score < 0:
+                current_str = f"{current_score} cp"
+            else:
+                current_str = "0 cp"
+        
+        print(f"Current position: {current_str}")
+        
+        # Display move history if we have moves
+        if move_history:
+            print(f"\nLast {min(len(move_history), history_length)} moves:")
+            
+            # Show the last N moves in reverse order (most recent first)
+            recent_moves = move_history[-history_length:] if len(move_history) > history_length else move_history
+            
+            for entry in reversed(recent_moves):
+                # All scores are already from Red's perspective, so just format them
+                if entry.score > 9000:
+                    score_str = f"Mate in {10000 - entry.score} for Red"
+                elif entry.score < -9000:
+                    score_str = f"Mate in {-10000 - entry.score} for Black"
+                else:
+                    if entry.score > 0:
+                        score_str = f"+{entry.score} cp"
+                    elif entry.score < 0:
+                        score_str = f"{entry.score} cp"
+                    else:
+                        score_str = "0 cp"
+                
+                # Color-code by player
+                if entry.is_red_move:
+                    color = Fore.RED
+                    player = "Red"
+                else:
+                    color = Fore.GREEN  
+                    player = "Black"
+                
+                print(f"  {entry.move_number}. {color}{player}{Style.RESET_ALL}: {entry.move} {score_str}")
+    
+    except Exception as e:
+        print(f"Error displaying score history: {e}")
 
 
 def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel] = None, 
@@ -37,7 +145,7 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
     
     # Use config defaults if not specified
     if not show_score:
-        show_score = config.get_required('game.show_score')
+        show_score = bool(config.get_required('game.show_score'))
     
     score_display_enabled = show_score  # Track score display state
 
@@ -45,7 +153,9 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
     
     try:
         # Get engine path from config if not specified
-        engine_path = engine_path or config.get('engine.path')
+        if engine_path is None:
+            engine_path_config = config.get('engine.path')
+            engine_path = str(engine_path_config) if engine_path_config is not None else None
         
         # Initialize engine first to download/test binary before asking for difficulty
         temp_engine = PikafishEngine(engine_path, difficulty=None)
@@ -72,7 +182,8 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
         )
     elif difficulty is None:
         # Try to use default difficulty from config
-        default_level = config.get_required('game.default_difficulty')
+        default_level_raw = config.get_required('game.default_difficulty')
+        default_level = str(default_level_raw) if default_level_raw is not None else "1"
         difficulty_config = config.get_difficulty(default_level)
         if difficulty_config:
             from .difficulty import DifficultyLevel
@@ -113,12 +224,24 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
         logger.info(f"Human playing as {'Red' if human_is_red else 'Black'}")
         engine.new_game()
 
+        # Track move history with scores for display
+        move_history: List[MoveHistoryEntry] = []
+        last_move = ""
+        cached_score: Optional[int] = None  # Cache current position score
+
         while True:
-            print(render(board.ascii()))
+            # Calculate score only once per position if score display is enabled
+            if score_display_enabled and cached_score is None:
+                raw_score = engine.get_position_evaluation(board.board_to_fen(), board.move_history)
+                # Convert to Red's perspective
+                is_red_turn_now = len(board.move_history) % 2 == 0
+                if is_red_turn_now:
+                    cached_score = raw_score
+                else:
+                    cached_score = -raw_score
             
-            # Display score if enabled
-            if score_display_enabled:
-                _display_position_score(engine, board)
+            _display_game_state(board, engine, score_display_enabled, human_is_red, 
+                              last_move=last_move, move_history=move_history, current_score=cached_score)
             
             # Check if game is over before each turn
             # First check for king capture (immediate game end)
@@ -153,15 +276,27 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
                         _display_hints(engine, board, human_is_red, max_moves=num_hints)
                     except (ValueError, IndexError):
                         # Use default from config
-                        default_hints = config.get_required('hints.default_count')
+                        default_hints_raw = config.get_required('hints.default_count')
+                        default_hints = int(default_hints_raw) if default_hints_raw is not None else 3
                         _display_hints(engine, board, human_is_red, max_moves=default_hints)
+                    
+                    # Pause to let user read hints, then continue
+                    input("\nPress Enter to continue...")
                     continue
                 
                 # Handle score toggle
                 if move == "SCORE":
                     score_display_enabled = not score_display_enabled
                     status = "enabled" if score_display_enabled else "disabled"
-                    print(f"Score display {status}.")
+                    # Recalculate cached score if enabling score display
+                    if score_display_enabled and cached_score is None:
+                        raw_score = engine.get_position_evaluation(board.board_to_fen(), board.move_history)
+                        is_red_turn_now = len(board.move_history) % 2 == 0
+                        cached_score = raw_score if is_red_turn_now else -raw_score
+                    _display_game_state(board, engine, score_display_enabled, human_is_red, 
+                                       f"Score display {status}.", last_move=last_move, 
+                                       move_history=move_history, current_score=cached_score)
+                    time.sleep(1)  # Brief pause to show the status
                     continue
                 
                 # Convert move to engine format for validation
@@ -173,20 +308,83 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
                 logger.debug(f"Engine says move is legal: {is_legal}")
                 
                 if not is_legal:
-                    print(f"Illegal move: {move} - This move violates xiangqi rules!")
+                    _display_game_state(board, engine, score_display_enabled, human_is_red, 
+                                       f"Illegal move: {move} - This move violates xiangqi rules!",
+                                       last_move=last_move, move_history=move_history, current_score=cached_score)
+                    time.sleep(1.5)  # Brief pause to show the error
                     continue
                     
                 try:
                     board.push_move(move)
+                    last_move = move  # Update last move
+                    cached_score = None  # Invalidate cache after move
+                    
+                    # Get score after the move for history tracking
+                    if score_display_enabled:
+                        # Determine whose move this was (Red or Black)
+                        is_red_move = human_is_red  # This was a human move
+                        
+                        # Get the score from engine (from perspective of current turn)
+                        raw_score = engine.get_position_evaluation(board.board_to_fen(), board.move_history)
+                        
+                        # Convert to Red's perspective
+                        is_red_turn_now = len(board.move_history) % 2 == 0  # Whose turn is it now?
+                        if is_red_turn_now:
+                            # Red's turn now, score is from Red's perspective already
+                            red_perspective_score = raw_score
+                        else:
+                            # Black's turn now, score is from Black's perspective, so negate it
+                            red_perspective_score = -raw_score
+                        
+                        move_history.append(MoveHistoryEntry(move, red_perspective_score, is_red_move, len(move_history) + 1))
+                        cached_score = red_perspective_score  # Cache the new score
                 except ValueError as e:
-                    print(f"Invalid move: {e}")
+                    _display_game_state(board, engine, score_display_enabled, human_is_red, 
+                                       f"Invalid move: {e}", last_move=last_move, 
+                                       move_history=move_history, current_score=cached_score)
+                    time.sleep(1.5)  # Brief pause to show the error
                     continue
             else:
                 logger.info(f"Engine thinking ({difficulty.name})...")
+                # Show "thinking" message using cached score (no recalculation)
+                _display_game_state(board, engine, score_display_enabled, human_is_red, 
+                                   f"Engine thinking ({difficulty.name})...",
+                                   last_move=last_move, move_history=move_history, current_score=cached_score)
+                
                 best = engine.best_move(board.board_to_fen(), board.move_history)
                 display_move = board._convert_from_engine_format(best)
-                print(f"Engine plays {display_move}")
                 board.push_move(display_move)
+                last_move = display_move  # Update last move
+                cached_score = None  # Invalidate cache after move
+                
+                # Get score after AI move for history tracking
+                if score_display_enabled:
+                    # Determine whose move this was (Red or Black)
+                    is_red_move = not human_is_red  # This was an AI move
+                    
+                    # Get the score from engine (from perspective of current turn)
+                    raw_score = engine.get_position_evaluation(board.board_to_fen(), board.move_history)
+                    
+                    # Convert to Red's perspective
+                    is_red_turn_now = len(board.move_history) % 2 == 0  # Whose turn is it now?
+                    if is_red_turn_now:
+                        # Red's turn now, score is from Red's perspective already
+                        red_perspective_score = raw_score
+                    else:
+                        # Black's turn now, score is from Black's perspective, so negate it
+                        red_perspective_score = -raw_score
+                    
+                    move_history.append(MoveHistoryEntry(display_move, red_perspective_score, is_red_move, len(move_history) + 1))
+                    cached_score = red_perspective_score  # Cache the new score
+                
+                # Show engine move with highlighting using cached score (no recalculation)
+                _display_game_state(board, engine, score_display_enabled, human_is_red, 
+                                   f"Engine plays {display_move}", 
+                                   last_move=last_move, move_history=move_history, current_score=cached_score)
+                
+                # Use configurable pause duration
+                pause_duration = float(config.get_required('ui.ai_move_pause_seconds'))
+                time.sleep(pause_duration)
     except Exception as e:
         logger.error(f"Game error: {e}")
         print(f"Error starting game: {e}")
@@ -206,18 +404,19 @@ def _prompt_user_move() -> Optional[str]:
     default_hints = config.get_required('hints.default_count')
     
     while True:
-        raw = input(prompt_style).strip().lower()
+        raw = input(str(prompt_style)).strip().lower()
         if raw in {"quit", "exit", "q"}:
             return None
         if raw in {"h", "help", "hint"}:
-            return f"HINT:{default_hints}"  # Use config default
+            return f"HINT:{int(default_hints) if default_hints is not None else 3}"  # Use config default
         if raw.startswith("hint "):
             # Parse "hint n" format
             parts = raw.split()
             if len(parts) == 2:
                 try:
                     num_hints = int(parts[1])
-                    max_hints = config.get_required('hints.max_count')
+                    max_hints_raw = config.get_required('hints.max_count')
+                    max_hints = int(max_hints_raw) if max_hints_raw is not None else 10
                     if 1 <= num_hints <= max_hints:
                         return f"HINT:{num_hints}"
                     else:
@@ -276,26 +475,3 @@ def _display_hints(engine: PikafishEngine, board: XiangqiBoard, human_is_red: bo
         print("Hint feature temporarily unavailable.")
 
 
-def _display_position_score(engine: PikafishEngine, board: XiangqiBoard) -> None:
-    """Display the current position evaluation score using dedicated scoring settings."""
-    try:
-        # Use the dedicated position evaluation method with scoring-specific settings
-        score = engine.get_position_evaluation(board.board_to_fen(), board.move_history)
-        
-        # Format the score for display (always from Red's perspective)
-        if score > 9000:
-            score_str = f"Mate in {10000 - score} for Red"
-        elif score < -9000:
-            score_str = f"Mate in {-10000 - score} for Black"
-        else:
-            if score > 0:
-                score_str = f"+{score} cp"
-            elif score < 0:
-                score_str = f"{score} cp"  # Already negative, no need for minus sign
-            else:
-                score_str = "0 cp"
-        
-        print(f"Position evaluation: {score_str}")
-    
-    except Exception as e:
-        print(f"Error getting position evaluation: {e}")
