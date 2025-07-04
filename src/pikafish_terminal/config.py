@@ -48,6 +48,10 @@ class ConfigManager:
                     'show_score': True,
                     'default_difficulty': 1
                 },
+                'scoring': {
+                    'depth': 25,
+                    'time_limit_ms': 2000
+                },
                 'hints': {
                     'default_count': 3,
                     'max_count': 10,

@@ -277,29 +277,23 @@ def _display_hints(engine: PikafishEngine, board: XiangqiBoard, human_is_red: bo
 
 
 def _display_position_score(engine: PikafishEngine, board: XiangqiBoard) -> None:
-    """Display the current position evaluation score."""
+    """Display the current position evaluation score using dedicated scoring settings."""
     try:
-        # Get the best move with evaluation
-        candidate_moves = engine.get_candidate_moves(board.board_to_fen(), board.move_history, max_moves=1)
+        # Use the dedicated position evaluation method with scoring-specific settings
+        score = engine.get_position_evaluation(board.board_to_fen(), board.move_history)
         
-        if not candidate_moves:
-            print("Position evaluation unavailable.")
-            return
-        
-        _, score = candidate_moves[0]
-        
-        # Format the score for display (simple centipawn format)
+        # Format the score for display (always from Red's perspective)
         if score > 9000:
             score_str = f"Mate in {10000 - score} for Red"
         elif score < -9000:
             score_str = f"Mate in {-10000 - score} for Black"
         else:
             if score > 0:
-                score_str = f"Red +{score} cp"
+                score_str = f"+{score} cp"
             elif score < 0:
-                score_str = f"Black +{abs(score)} cp"
+                score_str = f"{score} cp"  # Already negative, no need for minus sign
             else:
-                score_str = "Even position"
+                score_str = "0 cp"
         
         print(f"Position evaluation: {score_str}")
     

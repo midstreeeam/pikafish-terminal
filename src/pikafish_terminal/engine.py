@@ -279,9 +279,12 @@ class PikafishEngine:
         self._cmd(f"setoption name MultiPV value {max_moves}")
         
         # Use config values for hint calculation
-        hint_depth = min(self.depth, config.get_required('hints.depth'))
-        hint_time = min(self.time_limit_ms or config.get_required('hints.time_limit_ms'), 
-                       config.get_required('hints.time_limit_ms'))
+        hint_depth_config = config.get_required('hints.depth')
+        hint_time_config = config.get_required('hints.time_limit_ms')
+        
+        # Ensure we have integer values
+        hint_depth = min(self.depth, int(hint_depth_config))
+        hint_time = min(self.time_limit_ms or int(hint_time_config), int(hint_time_config))
         
         if self.time_limit_ms is not None:
             go_cmd = f"go movetime {hint_time}"
@@ -292,7 +295,8 @@ class PikafishEngine:
         
         candidate_moves: Dict[str, int] = {}  # move -> score
         move_ranks: Dict[str, int] = {}  # move -> rank (for MultiPV)
-        timeout = config.get_required('engine.move_timeout') // 6  # Use fraction of move timeout for hints
+        timeout_config = config.get_required('engine.move_timeout')
+        timeout = int(timeout_config) // 6  # Use fraction of move timeout for hints
         start_time = time.time()
         
         while True:
@@ -367,6 +371,75 @@ class PikafishEngine:
             return []
         
         return sorted_moves[:max_moves]
+
+    def get_position_evaluation(self, fen: str, moves: List[str]) -> int:
+        """Get position evaluation score using configured scoring settings.
+        
+        Returns:
+            Position evaluation score in centipawns (positive = good for Red/White)
+        """
+        config = get_config()
+        
+        # Clear the queue first
+        while not self._stdout_queue.empty():
+            try:
+                self._stdout_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        pos_cmd = f"position fen {fen}"
+        if moves:
+            pos_cmd += " moves " + " ".join(moves)
+        self._cmd(pos_cmd)
+        
+        # Use separate scoring configuration for more precise evaluation
+        scoring_depth = config.get_required('scoring.depth')
+        scoring_time = config.get_required('scoring.time_limit_ms')
+        
+        # Use the configured scoring settings
+        go_cmd = f"go depth {scoring_depth} movetime {scoring_time}"
+        self._cmd(go_cmd)
+        
+        score = 0  # Default score
+        timeout_config = config.get_required('engine.move_timeout')
+        timeout = int(timeout_config) // 4  # Use fraction of move timeout for scoring
+        start_time = time.time()
+        
+        while True:
+            try:
+                line = self._stdout_queue.get(timeout=0.5)
+                
+                # Parse "info" lines that contain evaluations
+                if line.startswith("info") and "score" in line:
+                    parts = line.split()
+                    try:
+                        # Find the score
+                        score_idx = parts.index("score")
+                        if score_idx + 2 < len(parts):
+                            score_type = parts[score_idx + 1]  # "cp" or "mate"
+                            score_value = int(parts[score_idx + 2])
+                            
+                            # Convert mate scores to very high/low values
+                            if score_type == "mate":
+                                if score_value > 0:
+                                    score = 10000 - score_value  # Mate in N moves
+                                else:
+                                    score = -10000 - score_value  # Mated in N moves
+                            else:
+                                score = score_value  # Centipawn score
+                                
+                    except (ValueError, IndexError):
+                        continue
+                
+                elif line.startswith("bestmove"):
+                    # Analysis complete
+                    break
+                    
+            except queue.Empty:
+                if time.time() - start_time > timeout:
+                    break
+        
+        return score
 
     def is_game_over(self, fen: str, moves: List[str]) -> Tuple[bool, str]:
         """Check if the game is over (checkmate, stalemate, etc). Returns (is_over, reason)."""
