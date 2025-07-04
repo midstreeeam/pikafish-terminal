@@ -278,18 +278,16 @@ class PikafishEngine:
         max_moves = min(max_moves, config.get_required('hints.max_count'))  # Use config limit
         self._cmd(f"setoption name MultiPV value {max_moves}")
         
-        # Use config values for hint calculation
+        # Use config values for hint calculation (independent of engine difficulty)
         hint_depth_config = config.get_required('hints.depth')
         hint_time_config = config.get_required('hints.time_limit_ms')
         
-        # Ensure we have integer values
-        hint_depth = min(self.depth, int(hint_depth_config))
-        hint_time = min(self.time_limit_ms or int(hint_time_config), int(hint_time_config))
+        # Use hint-specific settings, not limited by engine difficulty
+        hint_depth = int(hint_depth_config)
+        hint_time = int(hint_time_config)
         
-        if self.time_limit_ms is not None:
-            go_cmd = f"go movetime {hint_time}"
-        else:
-            go_cmd = f"go depth {hint_depth}"
+        # Always use both depth and time for hints to ensure proper calculation
+        go_cmd = f"go depth {hint_depth} movetime {hint_time}"
         
         self._cmd(go_cmd)
         
