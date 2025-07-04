@@ -153,7 +153,7 @@ class XiangqiBoard:
         header = "   " + " ".join(FILES)
         lines = [header]
         for idx, row in enumerate(self.board):
-            rank = 9 - idx
+            rank = 9 - idx  # Display ranks 0-9 for compatibility with move input system
             row_str = f"{rank} "
             for ch in row:
                 row_str += " " + PIECE_DISPLAY.get(ch, ch)

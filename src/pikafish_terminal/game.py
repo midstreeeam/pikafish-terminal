@@ -29,14 +29,48 @@ def _clear_screen() -> None:
     print("\033[H\033[J", end="", flush=True)
 
 
+def _transform_move_for_black_player(move: str) -> str:
+    """Transform move coordinates from Black player's flipped perspective to internal board coordinates.
+    
+    When playing as Black, the board is flipped so Black's pieces are at the bottom.
+    This means the coordinates the player sees need to be transformed:
+    - Files: 1→9, 2→8, 3→7, 4→6, 5→5, 6→4, 7→3, 8→2, 9→1
+    - Ranks: 0→9, 1→8, 2→7, 3→6, 4→5, 5→4, 6→3, 7→2, 8→1, 9→0
+    """
+    if len(move) != 4:
+        return move  # Invalid format, return as-is
+    
+    try:
+        # Parse the move from Black player's perspective
+        src_file = int(move[0])  # 1-9
+        src_rank = int(move[1])  # 0-9
+        dst_file = int(move[2])  # 1-9
+        dst_rank = int(move[3])  # 0-9
+        
+        # Transform coordinates from flipped perspective to internal representation
+        # Files: flip horizontally (1↔9, 2↔8, etc.)
+        transformed_src_file = 10 - src_file  # 1→9, 2→8, ..., 9→1
+        transformed_dst_file = 10 - dst_file
+        
+        # Ranks: flip vertically (0↔9, 1↔8, etc.)
+        transformed_src_rank = 9 - src_rank  # 0→9, 1→8, ..., 9→0
+        transformed_dst_rank = 9 - dst_rank
+        
+        # Return the transformed move
+        return f"{transformed_src_file}{transformed_src_rank}{transformed_dst_file}{transformed_dst_rank}"
+        
+    except (ValueError, IndexError):
+        return move  # Invalid format, return as-is
+
+
 def _display_game_state(board: XiangqiBoard, engine: PikafishEngine, score_display_enabled: bool, 
                        human_is_red: bool, status_message: str = "", last_move: str = "", 
                        move_history: Optional[List[MoveHistoryEntry]] = None, current_score: Optional[int] = None) -> None:
     """Display the current game state with board, score history, and turn information."""
     _clear_screen()
     
-    # Display the board with move highlighting
-    print(render(board.ascii(), last_move=last_move))
+    # Display the board with move highlighting, flipped if human plays as Black
+    print(render(board.ascii(), last_move=last_move, flip_board=not human_is_red))
     
     # Display score history if enabled
     if score_display_enabled and move_history:
@@ -222,6 +256,10 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
         human_is_red = side_choice != "b"
         
         logger.info(f"Human playing as {'Red' if human_is_red else 'Black'}")
+        if not human_is_red:
+            print("Playing as Black - board will be flipped to show Black pieces at the bottom.")
+        else:
+            print("Playing as Red - board will show Red pieces at the bottom.")
         engine.new_game()
 
         # Track move history with scores for display
@@ -298,6 +336,12 @@ def play(engine_path: Optional[str] = None, difficulty: Optional[DifficultyLevel
                                        move_history=move_history, current_score=cached_score)
                     time.sleep(1)  # Brief pause to show the status
                     continue
+                
+                # Transform move coordinates if playing as Black (board is flipped)
+                if not human_is_red:
+                    transformed_move = _transform_move_for_black_player(move)
+                    logger.debug(f"Black player move {move} transformed to {transformed_move}")
+                    move = transformed_move
                 
                 # Convert move to engine format for validation
                 engine_move = board._convert_to_engine_format(move)
@@ -430,6 +474,7 @@ def _prompt_user_move() -> Optional[str]:
         if len(raw) == 4 and all(ch.isalnum() for ch in raw):
             return raw
         print("Please enter moves like '1013' (file1-rank0 to file1-rank3), 'h' or 'hint N' for hints, 's' for score toggle, or 'quit' to exit.")
+        print("Note: If playing as Black, enter coordinates as you see them on the flipped board.")
 
 
 def _display_hints(engine: PikafishEngine, board: XiangqiBoard, human_is_red: bool, max_moves: int = 3) -> None:

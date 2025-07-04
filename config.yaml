@@ -3,8 +3,8 @@ game:
   default_difficulty: 1
   move_history_length: 5
 scoring:
-  depth: 25
-  time_limit_ms: 2000
+  depth: 10
+  time_limit_ms: 1000
 hints:
   default_count: 3
   max_count: 10
