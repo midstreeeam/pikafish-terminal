@@ -510,15 +510,26 @@ def _display_hints(engine: PikafishEngine, board: XiangqiBoard, human_is_red: bo
                 # Convert engine move to display format
                 display_move = board._convert_from_engine_format(engine_move)
                 
+                # If the human plays as Black, convert the move to the flipped
+                # coordinate system so that it matches what the player sees on
+                # screen.  The same self-inverse transformation that we use to
+                # convert input moves can be reused here.
+                if not human_is_red:
+                    display_move = _transform_move_for_black_player(display_move)
+
+                # Adjust score sign so positive values always favour the
+                # side the human is playing.
+                display_score = score if human_is_red else -score
+
                 if show_hint_scores:
                     # Format the score for display
-                    if score > 9000:
-                        score_str = f"Mate in {10000 - score}"
-                    elif score < -9000:
-                        score_str = f"Mated in {-10000 - score}"
+                    if display_score > 9000:
+                        score_str = f"Mate in {10000 - display_score}"
+                    elif display_score < -9000:
+                        score_str = f"Mated in {-10000 - display_score}"
                     else:
-                        score_str = f"{score:+d} cp"
-                    
+                        score_str = f"{display_score:+d} cp"
+
                     print(f"  {i}. {display_move} ({score_str})")
                 else:
                     print(f"  {i}. {display_move}")

@@ -137,15 +137,15 @@ def _render_flipped_board(lines: list[str], highlighted_squares: set[tuple[int, 
             out_lines.append(line)
             continue
         
-        # For flipped board, simply use line_idx as the rank (0-9)
-        # This puts Black's back rank (originally rank 0) at the bottom as rank 0
-        flipped_rank = line_idx
-        
-        # Calculate the original rank for highlighting purposes
-        original_rank = 9 - line_idx
-        
-        # Build the new line with flipped rank number and flipped pieces
-        new_line = f"{flipped_rank} "
+        # After flipping, we want the bottom row (closest to Black) to be rank 0
+        # and the top row to be rank 9 to match the coordinate system shown to
+        # the human Black player.
+
+        original_rank = 9 - line_idx  # Original rank before flipping
+        flipped_rank_display = original_rank  # Display this rank number on the flipped board
+
+        # Build the new line with the correct flipped rank number
+        new_line = f"{flipped_rank_display} "
         
         # Extract pieces from the line (skip rank number and spaces)
         # Handle both single-digit ranks
