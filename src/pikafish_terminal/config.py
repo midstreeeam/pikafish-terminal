@@ -33,7 +33,7 @@ class ConfigManager:
             try:
                 import pikafish_terminal
                 package_dir = os.path.dirname(pikafish_terminal.__file__)
-                package_config = os.path.join(os.path.dirname(package_dir), 'config.yaml')
+                package_config = os.path.join(package_dir, 'config.yaml')
                 
                 if os.path.exists(package_config):
                     shutil.copy2(package_config, self.config_file)

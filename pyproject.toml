@@ -62,7 +62,7 @@ fallback_version = "1.0.0"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"pikafish_terminal" = ["*.txt", "*.md"]
+"pikafish_terminal" = ["*.txt", "*.md", "*.yaml"]
 
 [tool.black]
 line-length = 88

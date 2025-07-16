@@ -1,0 +1,57 @@
+game:
+  show_score: true
+  default_difficulty: 1
+  move_history_length: 5
+scoring:
+  depth: 15
+  time_limit_ms: 500
+hints:
+  default_count: 3
+  max_count: 10
+  depth: 30
+  time_limit_ms: 3000
+  show_scores: true
+difficulties:
+  1:
+    name: Beginner
+    description: Very easy - Quick moves, shallow thinking
+    depth: 1
+    time_limit_ms: 100
+    uci_options: {}
+  2:
+    name: Easy
+    description: Easy - Basic tactics
+    depth: 2
+    time_limit_ms: 200
+    uci_options: {}
+  3:
+    name: Medium
+    description: Medium - Good for casual players
+    depth: 5
+    time_limit_ms: 500
+    uci_options: {}
+  4:
+    name: Hard
+    description: Hard - Strong tactical play
+    depth: 10
+    time_limit_ms: 1000
+    uci_options: {}
+  5:
+    name: Expert
+    description: Expert - Very strong play
+    depth: 15
+    time_limit_ms: 2000
+    uci_options: {}
+engine:
+  path: null
+  startup_timeout: 15
+  move_timeout: 60
+logging:
+  level: INFO
+  file: null
+ui:
+  board_style: ascii
+  coordinate_notation: numeric
+  prompt_style: '(pikafish) > '
+  ai_move_pause_seconds: 0.0
+advanced: {}
