@@ -48,21 +48,19 @@ Environment Variables:
         help="Path to Pikafish engine binary (auto-download if not specified)"
     )
     
-    # Difficulty group - mutually exclusive
-    difficulty_group = parser.add_mutually_exclusive_group()
-    
-    difficulty_group.add_argument(
+    # Difficulty options
+    parser.add_argument(
         "--difficulty",
         help="Difficulty from config: number or name (e.g., '3', 'quick_game', 'analysis_mode')"
     )
     
-    difficulty_group.add_argument(
+    parser.add_argument(
         "--depth",
         type=int,
         help="Search depth for custom difficulty (1-50)"
     )
     
-    difficulty_group.add_argument(
+    parser.add_argument(
         "--time",
         type=float,
         help="Time limit in seconds for custom difficulty (0.1-300)"

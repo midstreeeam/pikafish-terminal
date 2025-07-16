@@ -196,7 +196,7 @@ class ConfigManager:
         """Validate current configuration."""
         try:
             # Check required sections
-            required_sections = ['game', 'hints', 'difficulties', 'engine', 'logging', 'ui']
+            required_sections = ['game', 'scoring', 'hints', 'difficulties', 'engine', 'logging', 'ui']
             for section in required_sections:
                 if section not in self._config:
                     self.logger.error(f"Missing required config section: {section}")
@@ -206,6 +206,17 @@ class ConfigManager:
             hints_count = self.get_required('hints.default_count')
             if not isinstance(hints_count, int) or hints_count < 1 or hints_count > 20:
                 self.logger.error(f"Invalid hints.default_count: {hints_count} (must be 1-20)")
+                return False
+            
+            # Validate scoring section
+            scoring_depth = self.get_required('scoring.depth')
+            if not isinstance(scoring_depth, int) or scoring_depth < 1 or scoring_depth > 50:
+                self.logger.error(f"Invalid scoring.depth: {scoring_depth} (must be 1-50)")
+                return False
+            
+            scoring_time = self.get_required('scoring.time_limit_ms')
+            if not isinstance(scoring_time, int) or scoring_time < 100 or scoring_time > 300000:
+                self.logger.error(f"Invalid scoring.time_limit_ms: {scoring_time} (must be 100-300000)")
                 return False
             
             default_difficulty = self.get_required('game.default_difficulty')
