@@ -28,6 +28,12 @@ class ConfigManager:
             package_dir = os.path.dirname(pikafish_terminal.__file__)
             return os.path.join(package_dir, 'config.yaml')
         except Exception:
+            # Fallback: look for config.yaml in the same directory as this file
+            # This helps during development when the package isn't properly installed
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            fallback_config = os.path.join(current_dir, 'config.yaml')
+            if os.path.exists(fallback_config):
+                return fallback_config
             raise ConfigError("Could not locate package directory for configuration file")
     
     def _load_config(self) -> None:
