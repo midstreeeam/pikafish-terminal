@@ -32,6 +32,6 @@ pikafish --config-list      # Show all settings
 
 ## Configuration
 
-Settings are stored in `config.yaml` (auto-created). Edit this file to customize difficulties, hints, and display options.
+Settings are loaded from the built-in `config.yaml` file included with the package. The configuration provides default difficulty levels, hints, and display options.
 
 That's it! The AI engine downloads automatically on first run.
