@@ -1,7 +1,6 @@
 """Configuration management for Pikafish Terminal."""
 
 import os
-import shutil
 from typing import Dict, Any, Optional, Union
 import yaml
 import logging
@@ -23,111 +22,20 @@ class ConfigManager:
         self._load_config()
     
     def _get_config_file_path(self) -> str:
-        """Get the path to the configuration file."""
-        return os.path.join(os.getcwd(), 'config.yaml')
-    
-    def _create_default_config(self) -> None:
-        """Create default config file in current directory from package template."""
+        """Get the path to the configuration file from the package directory."""
         try:
-            # Try to copy from package installation
-            try:
-                import pikafish_terminal
-                package_dir = os.path.dirname(pikafish_terminal.__file__)
-                package_config = os.path.join(package_dir, 'config.yaml')
-                
-                if os.path.exists(package_config):
-                    shutil.copy2(package_config, self.config_file)
-                    self.logger.info(f"Created default config file: {self.config_file}")
-                    return
-            except Exception:
-                pass
-            
-            # Fallback: create minimal config
-            default_config = {
-                'game': {
-                    'show_score': True,
-                    'default_difficulty': 1
-                },
-                'scoring': {
-                    'depth': 25,
-                    'time_limit_ms': 2000
-                },
-                'hints': {
-                    'default_count': 3,
-                    'max_count': 10,
-                    'depth': 10,
-                    'time_limit_ms': 3000,
-                    'show_scores': True
-                },
-                'difficulties': {
-                    1: {
-                        'name': 'Beginner',
-                        'description': 'Very easy - Quick moves, shallow thinking',
-                        'depth': 1,
-                        'time_limit_ms': 100,
-                        'uci_options': {}
-                    },
-                    2: {
-                        'name': 'Easy', 
-                        'description': 'Easy - Basic tactics',
-                        'depth': 2,
-                        'time_limit_ms': 200,
-                        'uci_options': {}
-                    },
-                    3: {
-                        'name': 'Medium',
-                        'description': 'Medium - Good for casual players', 
-                        'depth': 5,
-                        'time_limit_ms': 500,
-                        'uci_options': {}
-                    },
-                    4: {
-                        'name': 'Hard',
-                        'description': 'Hard - Strong tactical play',
-                        'depth': 10, 
-                        'time_limit_ms': 1000,
-                        'uci_options': {}
-                    },
-                    5: {
-                        'name': 'Expert',
-                        'description': 'Expert - Very strong play',
-                        'depth': 15,
-                        'time_limit_ms': 2000, 
-                        'uci_options': {}
-                    }
-                },
-                'engine': {
-                    'path': None,
-                    'startup_timeout': 15,
-                    'move_timeout': 60
-                },
-                'logging': {
-                    'level': 'INFO',
-                    'file': None
-                },
-                'ui': {
-                    'board_style': 'ascii',
-                    'coordinate_notation': 'numeric',
-                    'prompt_style': '(pikafish) > '
-                },
-                'advanced': {}
-            }
-            
-            with open(self.config_file, 'w') as f:
-                yaml.dump(default_config, f, default_flow_style=False, indent=2, sort_keys=False)
-            
-            self.logger.info(f"Created minimal default config file: {self.config_file}")
-            
-        except Exception as e:
-            raise ConfigError(f"Could not create default config file: {e}")
+            import pikafish_terminal
+            package_dir = os.path.dirname(pikafish_terminal.__file__)
+            return os.path.join(package_dir, 'config.yaml')
+        except Exception:
+            raise ConfigError("Could not locate package directory for configuration file")
     
     def _load_config(self) -> None:
-        """Load configuration from file."""
+        """Load configuration from the package's bundled config file."""
         try:
-            # If config doesn't exist, create it
+            # Check if the package config file exists
             if not os.path.exists(self.config_file):
-                self.logger.info(f"Config file not found, creating default: {self.config_file}")
-                self._create_default_config()
+                raise ConfigError(f"Package config file not found: {self.config_file}")
             
             with open(self.config_file, 'r') as f:
                 self._config = yaml.safe_load(f) or {}
@@ -136,7 +44,7 @@ class ConfigManager:
             if not self.validate_config():
                 raise ConfigError("Configuration validation failed")
             
-            self.logger.debug(f"Loaded config from {self.config_file}")
+            self.logger.debug(f"Loaded config from package: {self.config_file}")
         except yaml.YAMLError as e:
             self.logger.error(f"Error parsing config file: {e}")
             raise ConfigError(f"Error parsing config file: {e}")
